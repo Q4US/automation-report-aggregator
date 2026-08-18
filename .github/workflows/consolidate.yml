@@ -41,7 +41,17 @@ jobs:
       #   run: |
       #     echo "Downloaded files:"
       #     find reports -type f -print
-      
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Initialize Node project
+        run: npm init -y
+
+      - name: Install Mochawesome merge tools
+        run: npm install mochawesome-merge mochawesome-report-generator
+
       - name: Download Dashboard Mochawesome report
         env:
           GH_TOKEN: ${{ secrets.REPORT_READER_TOKEN }}
@@ -97,3 +107,58 @@ jobs:
             console.log('Stats:', data.stats);
             console.log('Results:', data.results?.length || 0);
           " "$REPORT_JSON"
+      
+      - name: Prepare Mochawesome reports
+        run: |
+          mkdir -p reports/dashboard
+
+          REPORT_JSON=$(find mochawesome -name "index.json" -type f | head -1)
+
+          echo "Dashboard report:"
+          echo "$REPORT_JSON"
+
+          cp "$REPORT_JSON" reports/dashboard/dashboard.json
+
+          echo "Prepared reports:"
+          find reports -type f -print
+      
+      - name: Merge Mochawesome reports
+        run: |
+          npx mochawesome-merge "reports/**/*.json" \
+            -o consolidated.json
+      
+      - name: Generate consolidated HTML report
+        run: |
+          mkdir -p consolidated-report
+
+          npx marge consolidated.json \
+            --reportDir consolidated-report \
+            --reportFilename index.html
+      
+      - name: Verify consolidated report
+        run: |
+          echo "Consolidated report files:"
+          find consolidated-report -type f -print
+
+          echo ""
+          echo "Consolidated JSON:"
+          node -e "
+            const fs = require('fs');
+
+            const data = JSON.parse(
+              fs.readFileSync('consolidated.json', 'utf8')
+            );
+
+            console.log('Suites:', data.stats?.suites);
+            console.log('Tests:', data.stats?.tests);
+            console.log('Passed:', data.stats?.passes);
+            console.log('Failed:', data.stats?.failures);
+            console.log('Pending:', data.stats?.pending);
+            console.log('Skipped:', data.stats?.skipped);
+            console.log('Pass %:', data.stats?.passPercent);
+          "
+      - name: Upload consolidated report
+        uses: actions/upload-artifact@v4
+        with:
+          name: consolidated-mochawesome-report
+          path: consolidated-report/
