@@ -1,3 +1,98 @@
+# name: Consolidate E2E Reports
+
+# on:
+#   repository_dispatch:
+#     types:
+#       - consolidate-report
+
+#   workflow_dispatch:
+
+# jobs:
+#   download-dashboard-report:
+#     runs-on: ubuntu-latest
+
+#     steps:
+#       - name: Show trigger information
+#         run: |
+#           echo "Repository: ${{ github.event.client_payload.repository }}"
+#           echo "Run ID: ${{ github.event.client_payload.run_id }}"
+#           echo "Run Number: ${{ github.event.client_payload.run_number }}"
+#           echo "Branch: ${{ github.event.client_payload.branch }}"
+#           echo "Commit: ${{ github.event.client_payload.sha }}"
+
+#       - name: Setup Node
+#         uses: actions/setup-node@v4
+#         with:
+#           node-version: 22
+
+#       - name: Initialize Node project
+#         run: npm init -y
+
+#       - name: Install Mochawesome merge tools
+#         run: npm install mochawesome-merge mochawesome-report-generator
+
+#       - name: Download Dashboard Mochawesome report
+#         env:
+#           GH_TOKEN: ${{ secrets.REPORT_READER_TOKEN }}
+#           REPOSITORY: ${{ github.event.client_payload.repository }}
+#           RUN_ID: ${{ github.event.client_payload.run_id }}
+#           RUN_NUMBER: ${{ github.event.client_payload.run_number }}
+#         run: |
+#           mkdir -p mochawesome
+
+#           echo "Downloading Mochawesome artifact..."
+#           echo "Repository: $REPOSITORY"
+#           echo "Run ID: $RUN_ID"
+#           echo "Run Number: $RUN_NUMBER"
+
+#           gh run download "$RUN_ID" \
+#             --repo "$REPOSITORY" \
+#             --name "mochawesome-report-$RUN_NUMBER" \
+#             --dir mochawesome
+
+#       - name: Show downloaded Mochawesome files
+#         run: |
+#           echo "Downloaded Mochawesome files:"
+#           find mochawesome -type f -print
+      
+
+#       - name: Prepare consolidated report directory
+#         run: |
+#           mkdir -p consolidated-report/source-reports
+
+#           REPORT_JSON=$(find mochawesome -name "index.json" -type f | head -1)
+
+#           echo "Dashboard Mochawesome JSON:"
+#           echo "$REPORT_JSON"
+
+#           if [ -z "$REPORT_JSON" ]; then
+#             echo "ERROR: No index.json found"
+#             exit 1
+#           fi
+
+#           cp "$REPORT_JSON" \
+#              consolidated-report/source-reports/dashboard.json
+
+#           echo "Source report:"
+#           ls -lh consolidated-report/source-reports/dashboard.json
+
+#       - name: Merge Mochawesome reports
+#         run: |
+#           npx mochawesome-merge "consolidated-report/source-reports/*.json" \
+#             -o consolidated-report/consolidated.json
+
+#       - name: Generate consolidated HTML report
+#         run: |
+#           npx marge consolidated-report/consolidated.json \
+#             --reportDir consolidated-report \
+#             --reportFilename index.html
+
+#       - name: Upload consolidated report
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: consolidated-mochawesome-report
+#           path: consolidated-report/
+
 name: Consolidate E2E Reports
 
 on:
@@ -8,154 +103,406 @@ on:
   workflow_dispatch:
 
 jobs:
-  download-dashboard-report:
+  consolidate-reports:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      # ============================================================
+      # ALL 5 MFE REPOSITORIES
+      # Replace these with your actual repository names.
+      # ============================================================
+      ALL_MFE_REPOSITORIES: |
+        Q4US/dashboard
+        Q4US/mfe-project-2
+        Q4US/mfe-project-3
+        Q4US/mfe-project-4
+        Q4US/mfe-project-5
 
     steps:
+
+      # ============================================================
+      # 1. Display trigger information
+      # ============================================================
+
       - name: Show trigger information
         run: |
-          echo "Repository: ${{ github.event.client_payload.repository }}"
-          echo "Run ID: ${{ github.event.client_payload.run_id }}"
-          echo "Run Number: ${{ github.event.client_payload.run_number }}"
-          echo "Branch: ${{ github.event.client_payload.branch }}"
-          echo "Commit: ${{ github.event.client_payload.sha }}"
+          echo "========================================"
+          echo "Consolidated Report Trigger"
+          echo "========================================"
 
-      # - name: Download Dashboard final reports
-      #   env:
-      #     GH_TOKEN: ${{ secrets.REPORT_READER_TOKEN }}
-      #     REPOSITORY: ${{ github.event.client_payload.repository }}
-      #     RUN_ID: ${{ github.event.client_payload.run_id }}
-      #   run: |
-      #     mkdir -p reports
+          echo "Trigger Repository: ${{ github.event.client_payload.repository }}"
+          echo "Trigger Run ID:     ${{ github.event.client_payload.run_id }}"
+          echo "Trigger Run Number: ${{ github.event.client_payload.run_number }}"
+          echo "Trigger Branch:     ${{ github.event.client_payload.branch }}"
+          echo "Trigger Commit:     ${{ github.event.client_payload.sha }}"
 
-      #     echo "Downloading artifact from:"
-      #     echo "Repository: $REPOSITORY"
-      #     echo "Run ID: $RUN_ID"
+      # ============================================================
+      # 2. Setup Node
+      # ============================================================
 
-      #     gh run download "$RUN_ID" \
-      #       --repo "$REPOSITORY" \
-      #       --name final_test_reports \
-      #       --dir reports
-
-      # - name: Show downloaded files
-      #   run: |
-      #     echo "Downloaded files:"
-      #     find reports -type f -print
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
+      # ============================================================
+      # 3. Initialize Node project
+      # ============================================================
+
       - name: Initialize Node project
         run: npm init -y
 
-      - name: Install Mochawesome merge tools
-        run: npm install mochawesome-merge mochawesome-report-generator
+      # ============================================================
+      # 4. Install Mochawesome tools
+      # ============================================================
 
-      - name: Download Dashboard Mochawesome report
-        env:
-          GH_TOKEN: ${{ secrets.REPORT_READER_TOKEN }}
-          REPOSITORY: ${{ github.event.client_payload.repository }}
-          RUN_ID: ${{ github.event.client_payload.run_id }}
-          RUN_NUMBER: ${{ github.event.client_payload.run_number }}
+      - name: Install Mochawesome tools
         run: |
-          mkdir -p mochawesome
+          npm install mochawesome-merge
+          npm install mochawesome-report-generator
 
-          echo "Downloading Mochawesome artifact..."
-          echo "Repository: $REPOSITORY"
-          echo "Run ID: $RUN_ID"
-          echo "Run Number: $RUN_NUMBER"
+      # ============================================================
+      # 5. Prepare directories
+      # ============================================================
 
-          gh run download "$RUN_ID" \
-            --repo "$REPOSITORY" \
-            --name "mochawesome-report-$RUN_NUMBER" \
-            --dir mochawesome
-
-      - name: Show downloaded Mochawesome files
+      - name: Prepare directories
         run: |
-          echo "Downloaded Mochawesome files:"
-          find mochawesome -type f -print
-      
-      # - name: Prepare Mochawesome reports
-      #   run: |
-      #     mkdir -p reports/dashboard
+          rm -rf reports
+          rm -rf consolidated-report
 
-      #     REPORT_JSON=$(find mochawesome -name "index.json" -type f | head -1)
-
-      #     echo "Dashboard report:"
-      #     echo "$REPORT_JSON"
-
-      #     cp "$REPORT_JSON" reports/dashboard/dashboard.json
-
-      #     echo "Prepared reports:"
-      #     find reports -type f -print
-      
-      # - name: Merge Mochawesome reports
-      #   run: |
-      #     npx mochawesome-merge "reports/**/*.json" \
-      #       -o consolidated.json
-      
-      # - name: Generate consolidated HTML report
-      #   run: |
-      #     mkdir -p consolidated-report
-
-      #     npx marge consolidated.json \
-      #       --reportDir consolidated-report \
-      #       --reportFilename index.html
-      
-      # - name: Verify consolidated report
-      #   run: |
-      #     echo "Consolidated report files:"
-      #     find consolidated-report -type f -print
-
-      #     echo ""
-      #     echo "Consolidated JSON:"
-      #     node -e "
-      #       const fs = require('fs');
-
-      #       const data = JSON.parse(
-      #         fs.readFileSync('consolidated.json', 'utf8')
-      #       );
-
-      #       console.log('Suites:', data.stats?.suites);
-      #       console.log('Tests:', data.stats?.tests);
-      #       console.log('Passed:', data.stats?.passes);
-      #       console.log('Failed:', data.stats?.failures);
-      #       console.log('Pending:', data.stats?.pending);
-      #       console.log('Skipped:', data.stats?.skipped);
-      #       console.log('Pass %:', data.stats?.passPercent);
-      #     "
-
-      - name: Prepare consolidated report directory
-        run: |
+          mkdir -p reports
           mkdir -p consolidated-report/source-reports
 
-          REPORT_JSON=$(find mochawesome -name "index.json" -type f | head -1)
+      # ============================================================
+      # 6. Determine triggering repository
+      # ============================================================
 
-          echo "Dashboard Mochawesome JSON:"
-          echo "$REPORT_JSON"
+      - name: Determine triggering repository
+        id: trigger
+        run: |
+          TRIGGER_REPOSITORY="${{ github.event.client_payload.repository }}"
+          TRIGGER_RUN_ID="${{ github.event.client_payload.run_id }}"
+          TRIGGER_RUN_NUMBER="${{ github.event.client_payload.run_number }}"
 
-          if [ -z "$REPORT_JSON" ]; then
-            echo "ERROR: No index.json found"
+          if [ -z "$TRIGGER_REPOSITORY" ]; then
+            echo "ERROR: Trigger repository is empty"
             exit 1
           fi
 
-          cp "$REPORT_JSON" \
-             consolidated-report/source-reports/dashboard.json
+          if [ -z "$TRIGGER_RUN_ID" ]; then
+            echo "ERROR: Trigger run ID is empty"
+            exit 1
+          fi
 
-          echo "Source report:"
-          ls -lh consolidated-report/source-reports/dashboard.json
+          if [ -z "$TRIGGER_RUN_NUMBER" ]; then
+            echo "ERROR: Trigger run number is empty"
+            exit 1
+          fi
+
+          echo "Triggering repository: $TRIGGER_REPOSITORY"
+          echo "Triggering run ID: $TRIGGER_RUN_ID"
+          echo "Triggering run number: $TRIGGER_RUN_NUMBER"
+
+          echo "repository=$TRIGGER_REPOSITORY" >> "$GITHUB_OUTPUT"
+          echo "run_id=$TRIGGER_RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "run_number=$TRIGGER_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+
+      # ============================================================
+      # 7. Download EXACT report from triggering repository
+      # ============================================================
+
+      - name: Download triggering repository report
+        env:
+          GH_TOKEN: ${{ secrets.REPORT_READER_TOKEN }}
+          REPOSITORY: ${{ steps.trigger.outputs.repository }}
+          RUN_ID: ${{ steps.trigger.outputs.run_id }}
+          RUN_NUMBER: ${{ steps.trigger.outputs.run_number }}
+        run: |
+          REPO_NAME="${REPOSITORY##*/}"
+
+          echo "========================================"
+          echo "Triggering Repository"
+          echo "========================================"
+
+          echo "Repository: $REPOSITORY"
+          echo "Run ID: $RUN_ID"
+          echo "Run Number: $RUN_NUMBER"
+          echo "Repository Name: $REPO_NAME"
+
+          mkdir -p "reports/$REPO_NAME"
+
+          ARTIFACT_NAME="mochawesome-report-$RUN_NUMBER"
+
+          echo "Downloading artifact: $ARTIFACT_NAME"
+
+          gh run download "$RUN_ID" \
+            --repo "$REPOSITORY" \
+            --name "$ARTIFACT_NAME" \
+            --dir "reports/$REPO_NAME"
+
+      # ============================================================
+      # 8. Prepare triggering repository JSON
+      # ============================================================
+
+      - name: Prepare triggering repository JSON
+        env:
+          REPOSITORY: ${{ steps.trigger.outputs.repository }}
+        run: |
+          REPO_NAME="${REPOSITORY##*/}"
+
+          REPORT_JSON=$(find "reports/$REPO_NAME" \
+            -name "index.json" \
+            -type f | head -1)
+
+          if [ -z "$REPORT_JSON" ]; then
+            echo "ERROR: No index.json found for $REPOSITORY"
+            exit 1
+          fi
+
+          echo "Found triggering report:"
+          echo "$REPORT_JSON"
+
+          cp "$REPORT_JSON" \
+            "consolidated-report/source-reports/$REPO_NAME.json"
+
+          echo "Prepared:"
+          echo "consolidated-report/source-reports/$REPO_NAME.json"
+
+      # ============================================================
+      # 9. Download latest reports from OTHER MFEs
+      # ============================================================
+
+      - name: Download latest reports from other MFEs
+        env:
+          GH_TOKEN: ${{ secrets.REPORT_READER_TOKEN }}
+          TRIGGER_REPOSITORY: ${{ steps.trigger.outputs.repository }}
+        run: |
+
+          echo "========================================"
+          echo "Other MFE Reports"
+          echo "========================================"
+
+          while IFS= read -r REPOSITORY; do
+
+            # Ignore empty lines
+            [ -z "$REPOSITORY" ] && continue
+
+            # ------------------------------------------------------
+            # Skip the repository that triggered this workflow
+            # ------------------------------------------------------
+
+            if [ "$REPOSITORY" = "$TRIGGER_REPOSITORY" ]; then
+              echo ""
+              echo "Skipping triggering repository:"
+              echo "$REPOSITORY"
+              continue
+            fi
+
+            echo ""
+            echo "----------------------------------------"
+            echo "Processing: $REPOSITORY"
+            echo "----------------------------------------"
+
+            REPO_NAME="${REPOSITORY##*/}"
+
+            mkdir -p "reports/$REPO_NAME"
+
+            # ------------------------------------------------------
+            # Find latest successful E2E run on master
+            # ------------------------------------------------------
+
+            RUN_INFO=$(gh run list \
+              --repo "$REPOSITORY" \
+              --workflow "QA E2E Tests" \
+              --branch master \
+              --status success \
+              --limit 1 \
+              --json databaseId,number)
+
+            if [ -z "$RUN_INFO" ] || [ "$RUN_INFO" = "[]" ]; then
+              echo "ERROR: No successful QA E2E Tests run found"
+              echo "Repository: $REPOSITORY"
+              exit 1
+            fi
+
+            RUN_ID=$(echo "$RUN_INFO" | jq -r '.[0].databaseId')
+            RUN_NUMBER=$(echo "$RUN_INFO" | jq -r '.[0].number')
+
+            echo "Latest successful run:"
+            echo "Run ID: $RUN_ID"
+            echo "Run Number: $RUN_NUMBER"
+
+            # ------------------------------------------------------
+            # Download Mochawesome artifact
+            # ------------------------------------------------------
+
+            ARTIFACT_NAME="mochawesome-report-$RUN_NUMBER"
+
+            echo "Downloading artifact:"
+            echo "$ARTIFACT_NAME"
+
+            gh run download "$RUN_ID" \
+              --repo "$REPOSITORY" \
+              --name "$ARTIFACT_NAME" \
+              --dir "reports/$REPO_NAME"
+
+            # ------------------------------------------------------
+            # Find index.json
+            # ------------------------------------------------------
+
+            REPORT_JSON=$(find "reports/$REPO_NAME" \
+              -name "index.json" \
+              -type f | head -1)
+
+            if [ -z "$REPORT_JSON" ]; then
+              echo "ERROR: No index.json found"
+              echo "Repository: $REPOSITORY"
+              exit 1
+            fi
+
+            echo "Found JSON:"
+            echo "$REPORT_JSON"
+
+            # ------------------------------------------------------
+            # Copy to consolidated source directory
+            # ------------------------------------------------------
+
+            cp "$REPORT_JSON" \
+              "consolidated-report/source-reports/$REPO_NAME.json"
+
+            echo "Prepared:"
+            echo "consolidated-report/source-reports/$REPO_NAME.json"
+
+          done <<< "$ALL_MFE_REPOSITORIES"
+
+      # ============================================================
+      # 10. Display all source reports
+      # ============================================================
+
+      - name: Show source reports
+        run: |
+          echo "========================================"
+          echo "SOURCE REPORTS"
+          echo "========================================"
+
+          find consolidated-report/source-reports \
+            -type f \
+            -name "*.json" \
+            -print
+
+      # ============================================================
+      # 11. Validate all 5 reports exist
+      # ============================================================
+
+      - name: Validate source reports
+        run: |
+          REPORT_COUNT=$(find consolidated-report/source-reports \
+            -type f \
+            -name "*.json" | wc -l)
+
+          echo "Number of source reports: $REPORT_COUNT"
+
+          if [ "$REPORT_COUNT" -ne 5 ]; then
+            echo ""
+            echo "ERROR: Expected 5 source reports"
+            echo "Found: $REPORT_COUNT"
+            echo ""
+
+            find consolidated-report/source-reports \
+              -type f \
+              -name "*.json" \
+              -print
+
+            exit 1
+          fi
+
+          echo "All 5 MFE reports are available."
+
+      # ============================================================
+      # 12. Merge all Mochawesome JSON reports
+      # ============================================================
 
       - name: Merge Mochawesome reports
         run: |
-          npx mochawesome-merge "consolidated-report/source-reports/*.json" \
+          echo "========================================"
+          echo "MERGING REPORTS"
+          echo "========================================"
+
+          npx mochawesome-merge \
+            "consolidated-report/source-reports/*.json" \
             -o consolidated-report/consolidated.json
+
+      # ============================================================
+      # 13. Verify consolidated JSON
+      # ============================================================
+
+      - name: Verify consolidated JSON
+        run: |
+          echo "========================================"
+          echo "CONSOLIDATED JSON"
+          echo "========================================"
+
+          node - <<'NODE'
+          const fs = require('fs');
+
+          const file = 'consolidated-report/consolidated.json';
+
+          if (!fs.existsSync(file)) {
+            console.error('ERROR: consolidated.json not found');
+            process.exit(1);
+          }
+
+          const data = JSON.parse(
+            fs.readFileSync(file, 'utf8')
+          );
+
+          console.log('Suites:', data.stats?.suites);
+          console.log('Tests:', data.stats?.tests);
+          console.log('Registered:', data.stats?.testsRegistered);
+          console.log('Passed:', data.stats?.passes);
+          console.log('Failed:', data.stats?.failures);
+          console.log('Pending:', data.stats?.pending);
+          console.log('Skipped:', data.stats?.skipped);
+          console.log('Pass %:', data.stats?.passPercent);
+          console.log('Results:', data.results?.length);
+
+          if (!data.results || data.results.length === 0) {
+            console.error('ERROR: Consolidated report contains no results');
+            process.exit(1);
+          }
+          NODE
+
+      # ============================================================
+      # 14. Generate consolidated HTML
+      # ============================================================
 
       - name: Generate consolidated HTML report
         run: |
-          npx marge consolidated-report/consolidated.json \
-            --reportDir consolidated-report \
+          mkdir -p consolidated-report/html
+
+          npx marge \
+            consolidated-report/consolidated.json \
+            --reportDir consolidated-report/html \
             --reportFilename index.html
+
+      # ============================================================
+      # 15. Show final report structure
+      # ============================================================
+
+      - name: Show final report structure
+        run: |
+          echo "========================================"
+          echo "FINAL CONSOLIDATED REPORT"
+          echo "========================================"
+
+          find consolidated-report \
+            -type f \
+            -print
+
+      # ============================================================
+      # 16. Upload consolidated report
+      # ============================================================
 
       - name: Upload consolidated report
         uses: actions/upload-artifact@v4
