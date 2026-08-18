@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  test-trigger:
+  download-dashboard-report:
     runs-on: ubuntu-latest
 
     steps:
@@ -19,3 +19,25 @@ jobs:
           echo "Run Number: ${{ github.event.client_payload.run_number }}"
           echo "Branch: ${{ github.event.client_payload.branch }}"
           echo "Commit: ${{ github.event.client_payload.sha }}"
+
+      - name: Download Dashboard final reports
+        env:
+          GH_TOKEN: ${{ secrets.REPORT_READER_TOKEN }}
+          REPOSITORY: ${{ github.event.client_payload.repository }}
+          RUN_ID: ${{ github.event.client_payload.run_id }}
+        run: |
+          mkdir -p reports
+
+          echo "Downloading artifact from:"
+          echo "Repository: $REPOSITORY"
+          echo "Run ID: $RUN_ID"
+
+          gh run download "$RUN_ID" \
+            --repo "$REPOSITORY" \
+            --name final_test_reports \
+            --dir reports
+
+      - name: Show downloaded files
+        run: |
+          echo "Downloaded files:"
+          find reports -type f -print
