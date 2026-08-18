@@ -1,0 +1,21 @@
+name: Consolidate E2E Reports
+
+on:
+  repository_dispatch:
+    types:
+      - consolidate-report
+
+  workflow_dispatch:
+
+jobs:
+  test-trigger:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Show trigger information
+        run: |
+          echo "Repository: ${{ github.event.client_payload.repository }}"
+          echo "Run ID: ${{ github.event.client_payload.run_id }}"
+          echo "Run Number: ${{ github.event.client_payload.run_number }}"
+          echo "Branch: ${{ github.event.client_payload.branch }}"
+          echo "Commit: ${{ github.event.client_payload.sha }}"
