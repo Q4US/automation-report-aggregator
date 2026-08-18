@@ -20,24 +20,48 @@ jobs:
           echo "Branch: ${{ github.event.client_payload.branch }}"
           echo "Commit: ${{ github.event.client_payload.sha }}"
 
-      - name: Download Dashboard final reports
+      # - name: Download Dashboard final reports
+      #   env:
+      #     GH_TOKEN: ${{ secrets.REPORT_READER_TOKEN }}
+      #     REPOSITORY: ${{ github.event.client_payload.repository }}
+      #     RUN_ID: ${{ github.event.client_payload.run_id }}
+      #   run: |
+      #     mkdir -p reports
+
+      #     echo "Downloading artifact from:"
+      #     echo "Repository: $REPOSITORY"
+      #     echo "Run ID: $RUN_ID"
+
+      #     gh run download "$RUN_ID" \
+      #       --repo "$REPOSITORY" \
+      #       --name final_test_reports \
+      #       --dir reports
+
+      # - name: Show downloaded files
+      #   run: |
+      #     echo "Downloaded files:"
+      #     find reports -type f -print
+      
+      - name: Download Dashboard Mochawesome report
         env:
           GH_TOKEN: ${{ secrets.REPORT_READER_TOKEN }}
           REPOSITORY: ${{ github.event.client_payload.repository }}
           RUN_ID: ${{ github.event.client_payload.run_id }}
+          RUN_NUMBER: ${{ github.event.client_payload.run_number }}
         run: |
-          mkdir -p reports
+          mkdir -p mochawesome
 
-          echo "Downloading artifact from:"
+          echo "Downloading Mochawesome artifact..."
           echo "Repository: $REPOSITORY"
           echo "Run ID: $RUN_ID"
+          echo "Run Number: $RUN_NUMBER"
 
           gh run download "$RUN_ID" \
             --repo "$REPOSITORY" \
-            --name final_test_reports \
-            --dir reports
+            --name "mochawesome-report-$RUN_NUMBER" \
+            --dir mochawesome
 
-      - name: Show downloaded files
+      - name: Show downloaded Mochawesome files
         run: |
-          echo "Downloaded files:"
-          find reports -type f -print
+          echo "Downloaded Mochawesome files:"
+          find mochawesome -type f -print
