@@ -66,7 +66,7 @@ jobs:
           echo "Downloaded Mochawesome files:"
           find mochawesome -type f -print
 
-            - name: Inspect Dashboard Mochawesome JSON
+      - name: Inspect Dashboard Mochawesome JSON
         run: |
           echo "Finding Mochawesome JSON files..."
 
