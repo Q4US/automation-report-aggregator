@@ -130,12 +130,25 @@ jobs:
         run: |
           mkdir -p consolidated-report/source-reports
 
-          cp reports/dashboard/dashboard.json \
+          REPORT_JSON=$(find mochawesome -name "index.json" -type f | head -1)
+
+          echo "Dashboard Mochawesome JSON:"
+          echo "$REPORT_JSON"
+
+          if [ -z "$REPORT_JSON" ]; then
+            echo "ERROR: No index.json found"
+            exit 1
+          fi
+
+          cp "$REPORT_JSON" \
              consolidated-report/source-reports/dashboard.json
+
+          echo "Source report:"
+          ls -lh consolidated-report/source-reports/dashboard.json
 
       - name: Merge Mochawesome reports
         run: |
-          npx mochawesome-merge "reports/**/*.json" \
+          npx mochawesome-merge "consolidated-report/source-reports/*.json" \
             -o consolidated-report/consolidated.json
 
       - name: Generate consolidated HTML report
