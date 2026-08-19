@@ -283,10 +283,18 @@ jobs:
       # 10. Download latest reports from OTHER MFEs
       # ============================================================
 
-      - name: Download latest reports from other MFEs
+      - name: Download latest available reports from other MFEs
         env:
           GH_TOKEN: ${{ secrets.REPORT_READER_TOKEN }}
-          TRIGGER_REPOSITORY: ${{ steps.trigger.outputs.repository }}
+          TRIGGER_REPOSITORY: ${{ github.event.client_payload.repository }}
+          ALL_MFE_REPOSITORIES: |
+            Q4US/dashboard
+            Q4US/user-management
+            Q4US/ask-ai
+            Q4US/profile
+            Q4US/react-tree
+            Q4US/error-reports
+            Q4US/audit
         run: |
 
           echo "========================================"
@@ -294,13 +302,7 @@ jobs:
           echo "========================================"
 
           while IFS= read -r REPOSITORY; do
-
-            # Ignore empty lines
             [ -z "$REPOSITORY" ] && continue
-
-            # ------------------------------------------------------
-            # Skip the repository that triggered this workflow
-            # ------------------------------------------------------
 
             if [ "$REPOSITORY" = "$TRIGGER_REPOSITORY" ]; then
               echo ""
@@ -319,7 +321,7 @@ jobs:
             mkdir -p "reports/$REPO_NAME"
 
             # ------------------------------------------------------
-            # Find latest successful E2E run on master
+            # Get recent successful runs
             # ------------------------------------------------------
 
             RUN_INFO=$(gh run list \
@@ -327,34 +329,105 @@ jobs:
               --workflow "QA E2E Tests" \
               --branch master \
               --status success \
-              --limit 1 \
-              --json databaseId,number)
+              --limit 10 \
+              --json databaseId,number,createdAt)
 
             if [ -z "$RUN_INFO" ] || [ "$RUN_INFO" = "[]" ]; then
-              echo "ERROR: No successful QA E2E Tests run found"
+              echo "ERROR: No successful QA E2E Tests runs found"
               echo "Repository: $REPOSITORY"
               exit 1
             fi
 
-            RUN_ID=$(echo "$RUN_INFO" | jq -r '.[0].databaseId')
-            RUN_NUMBER=$(echo "$RUN_INFO" | jq -r '.[0].number')
-
-            echo "Latest successful run:"
-            echo "Run ID: $RUN_ID"
-            echo "Run Number: $RUN_NUMBER"
+            FOUND_RUN_ID=""
+            FOUND_RUN_NUMBER=""
+            FOUND_ARTIFACT=""
 
             # ------------------------------------------------------
-            # Download Mochawesome artifact
+            # Search runs until an available Mochawesome artifact
+            # is found
             # ------------------------------------------------------
 
-            ARTIFACT_NAME="mochawesome-report-$RUN_NUMBER"
+            while IFS= read -r RUN_ID; do
 
-            echo "Downloading artifact:"
-            echo "$ARTIFACT_NAME"
+              RUN_NUMBER=$(echo "$RUN_INFO" | jq -r \
+                ".[] | select(.databaseId == $RUN_ID) | .number")
 
-            gh run download "$RUN_ID" \
+              CREATED_AT=$(echo "$RUN_INFO" | jq -r \
+                ".[] | select(.databaseId == $RUN_ID) | .createdAt")
+
+              echo ""
+              echo "Checking successful run:"
+              echo "Run ID: $RUN_ID"
+              echo "Run Number: $RUN_NUMBER"
+              echo "Created: $CREATED_AT"
+
+              # ----------------------------------------------------
+              # Check artifacts belonging to this run
+              # ----------------------------------------------------
+
+              ARTIFACT_NAME=$(gh api \
+                "/repos/$REPOSITORY/actions/runs/$RUN_ID/artifacts" \
+                --jq '.artifacts[]
+                  | select(.expired == false)
+                  | select(.name | startswith("mochawesome-report-"))
+                  | .name' \
+                | head -1)
+
+              if [ -n "$ARTIFACT_NAME" ]; then
+
+                echo "Available Mochawesome artifact found:"
+                echo "$ARTIFACT_NAME"
+
+                FOUND_RUN_ID="$RUN_ID"
+                FOUND_RUN_NUMBER="$RUN_NUMBER"
+                FOUND_ARTIFACT="$ARTIFACT_NAME"
+
+                break
+
+              else
+
+                echo "No available Mochawesome artifact for this run."
+
+              fi
+
+            done < <(
+              echo "$RUN_INFO" |
+                jq -r 'sort_by(.createdAt) | reverse | .[].databaseId'
+            )
+
+            # ------------------------------------------------------
+            # Ensure a report was found
+            # ------------------------------------------------------
+
+            if [ -z "$FOUND_ARTIFACT" ]; then
+
+              echo ""
+              echo "ERROR: No available Mochawesome artifact found"
+              echo "Repository: $REPOSITORY"
+              echo ""
+              echo "Checked recent successful runs:"
+              echo "$RUN_INFO" | jq -r \
+                '.[] | "Run \(.number) - \(.databaseId) - \(.createdAt)"'
+
+              exit 1
+            fi
+
+            echo ""
+            echo "========================================"
+            echo "SELECTED REPORT"
+            echo "========================================"
+            echo "Repository: $REPOSITORY"
+            echo "Run ID: $FOUND_RUN_ID"
+            echo "Run Number: $FOUND_RUN_NUMBER"
+            echo "Artifact: $FOUND_ARTIFACT"
+
+            # ------------------------------------------------------
+            # Download artifact
+            # ------------------------------------------------------
+
+            gh run download "$FOUND_RUN_ID" \
               --repo "$REPOSITORY" \
-              --name "$ARTIFACT_NAME" \
+              --name "$FOUND_ARTIFACT" \
               --dir "reports/$REPO_NAME"
 
             # ------------------------------------------------------
@@ -366,20 +439,23 @@ jobs:
               -type f | head -1)
 
             if [ -z "$REPORT_JSON" ]; then
+
+              echo ""
               echo "ERROR: No index.json found"
               echo "Repository: $REPOSITORY"
+              echo "Artifact: $FOUND_ARTIFACT"
+
               exit 1
+
             fi
 
+            echo ""
             echo "Found JSON:"
             echo "$REPORT_JSON"
 
-            # ----------------------------------------------------------
-            # Copy entire report including:
-            #   index.json
-            #   screenshots
-            #   videos
-            # ----------------------------------------------------------
+            # ------------------------------------------------------
+            # Copy entire report
+            # ------------------------------------------------------
 
             mkdir -p \
               "consolidated-report/source-reports/$REPO_NAME"
@@ -388,6 +464,7 @@ jobs:
               "reports/$REPO_NAME/." \
               "consolidated-report/source-reports/$REPO_NAME/"
 
+            echo ""
             echo "Prepared:"
             echo "consolidated-report/source-reports/$REPO_NAME"
 
@@ -395,9 +472,8 @@ jobs:
               "consolidated-report/source-reports/$REPO_NAME" \
               -type f \
               -print
-            
 
-            done <<< "$ALL_MFE_REPOSITORIES"
+          done <<< "$ALL_MFE_REPOSITORIES"
 
       # ============================================================
       # 11. Display all source reports
