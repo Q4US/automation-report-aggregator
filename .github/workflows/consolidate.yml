@@ -161,6 +161,11 @@ jobs:
 
       - name: Initialize Node project
         run: npm init -y
+      
+      - name: Install reporting tools
+        run: |
+          npm install puppeteer
+          npm install xlsx-populate
 
       # ============================================================
       # 5. Install Mochawesome tools
@@ -643,7 +648,19 @@ jobs:
             consolidated-report/consolidated.json \
             --reportDir consolidated-report/html \
             --reportFilename index.html
+            
+      - name: Generate consolidated PDF
+        run: |
+          node .github/scripts/generate-consolidated-pdf.js \
+            consolidated-report/consolidated.json \
+            consolidated-report/final
 
+      - name: Generate consolidated Excel
+        run: |
+          node .github/scripts/generate-consolidated-excel.js \
+            consolidated-report/consolidated.json \
+            .github/scripts/template/consolidated-template.xlsm \
+            consolidated-report/final
       # ============================================================
       # 16. Show final report structure
       # ============================================================
