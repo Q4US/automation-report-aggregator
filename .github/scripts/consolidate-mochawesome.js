@@ -21,6 +21,12 @@ function generateUUID() {
     return crypto.randomUUID();
 }
 
+function getProjectName(projectDirectory) {
+    return projectDirectory
+        .replace(/[-_]+/g, ' ')
+        .replace(/\b\w/g, char => char.toUpperCase());
+}
+
 function emptyStats() {
     return {
         suites: 0,
@@ -580,11 +586,7 @@ function main() {
         const projectDirectory
         of projectDirectories
     ) {
-        const projectName =
-            PROJECT_NAMES[
-                projectDirectory
-            ] ||
-            projectDirectory;
+        const projectName = getProjectName(projectDirectory);
 
         console.log('');
         console.log(
