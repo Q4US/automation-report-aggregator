@@ -17,7 +17,7 @@ const PROJECT_NAMES = {
     audit: 'Audit',
 };
 
-function uuid() {
+function generateUUID() {
     return crypto.randomUUID();
 }
 
@@ -41,38 +41,38 @@ function emptyStats() {
     };
 }
 
-function addStats(target, source) {
-    target.suites += source?.suites || 0;
-    target.tests += source?.tests || 0;
-    target.passes += source?.passes || 0;
-    target.pending += source?.pending || 0;
-    target.failures += source?.failures || 0;
-    target.testsRegistered += source?.testsRegistered || 0;
-    target.other += source?.other || 0;
-    target.skipped += source?.skipped || 0;
+function addStats(total, stats) {
+    total.suites += stats?.suites || 0;
+    total.tests += stats?.tests || 0;
+    total.passes += stats?.passes || 0;
+    total.pending += stats?.pending || 0;
+    total.failures += stats?.failures || 0;
+    total.testsRegistered += stats?.testsRegistered || 0;
+    total.other += stats?.other || 0;
+    total.skipped += stats?.skipped || 0;
 
-    if (source?.start) {
+    if (stats?.start) {
         if (
-            !target.start ||
-            new Date(source.start) < new Date(target.start)
+            !total.start ||
+            new Date(stats.start) < new Date(total.start)
         ) {
-            target.start = source.start;
+            total.start = stats.start;
         }
     }
 
-    if (source?.end) {
+    if (stats?.end) {
         if (
-            !target.end ||
-            new Date(source.end) > new Date(target.end)
+            !total.end ||
+            new Date(stats.end) > new Date(total.end)
         ) {
-            target.end = source.end;
+            total.end = stats.end;
         }
     }
 
-    target.duration += source?.duration || 0;
+    total.duration += stats?.duration || 0;
 }
 
-function calculateStats(stats) {
+function calculatePercentages(stats) {
     if (stats.tests > 0) {
         stats.passPercent =
             (stats.passes / stats.tests) * 100;
@@ -83,364 +83,12 @@ function calculateStats(stats) {
 
     stats.hasOther = stats.other > 0;
     stats.hasSkipped = stats.skipped > 0;
+
+    return stats;
 }
 
-function findIndexJson(directory) {
-    const entries = fs.readdirSync(directory, {
-        withFileTypes: true,
-    });
-
-    for (const entry of entries) {
-        const fullPath = path.join(
-            directory,
-            entry.name
-        );
-
-        if (
-            entry.isFile() &&
-            entry.name === 'index.json'
-        ) {
-            return fullPath;
-        }
-
-        if (entry.isDirectory()) {
-            const found = findIndexJson(fullPath);
-
-            if (found) {
-                return found;
-            }
-        }
-    }
-
-    return null;
-}
-
-function rewriteAssetPath(
-    value,
-    projectDirectory,
-    reportDirectory
-) {
-    if (
-        !value ||
-        typeof value !== 'string'
-    ) {
-        return value;
-    }
-
-    if (
-        value.startsWith('http://') ||
-        value.startsWith('https://') ||
-        value.startsWith('data:')
-    ) {
-        return value;
-    }
-
-    const normalized = value
-        .replace(/\\/g, '/')
-        .replace(/^\/+/, '');
-
-    /*
-     * The downloaded report directory may look like:
-     *
-     * dashboard/
-     *   2026-08-19.../
-     *     index.json
-     *     screenshots/
-     *     videos/
-     *
-     * We keep the actual artifact structure.
-     */
-
-    if (
-        normalized.startsWith('screenshots/') ||
-        normalized.startsWith('videos/')
-    ) {
-        return path.posix.join(
-            'source-reports',
-            projectDirectory,
-            reportDirectory,
-            normalized
-        );
-    }
-
-    return value;
-}
-
-function rewriteAssets(
-    object,
-    projectDirectory,
-    reportDirectory
-) {
-    if (!object || typeof object !== 'object') {
-        return;
-    }
-
-    if (Array.isArray(object)) {
-        for (const item of object) {
-            rewriteAssets(
-                item,
-                projectDirectory,
-                reportDirectory
-            );
-        }
-
-        return;
-    }
-
-    for (const key of Object.keys(object)) {
-        const value = object[key];
-
-        if (
-            typeof value === 'string' &&
-            (
-                key === 'video' ||
-                key === 'videoPath' ||
-                key === 'screenshot'
-            )
-        ) {
-            object[key] =
-                rewriteAssetPath(
-                    value,
-                    projectDirectory,
-                    reportDirectory
-                );
-
-            continue;
-        }
-
-        if (
-            Array.isArray(value) &&
-            (
-                key === 'screenshots'
-            )
-        ) {
-            object[key] = value.map(item =>
-                rewriteAssetPath(
-                    item,
-                    projectDirectory,
-                    reportDirectory
-                )
-            );
-
-            continue;
-        }
-
-        if (
-            value &&
-            typeof value === 'object'
-        ) {
-            rewriteAssets(
-                value,
-                projectDirectory,
-                reportDirectory
-            );
-        }
-    }
-}
-
-/**
- * Ensure every Mochawesome suite has the fields
- * expected by marge.
- */
-function normalizeSuite(
-    suite,
-    parentTitle = ''
-) {
-    const normalized = {
-        ...suite,
-
-        uuid: suite.uuid || uuid(),
-
-        title:
-            suite.title ||
-            'Unnamed Suite',
-
-        fullFile:
-            suite.fullFile ||
-            suite.file ||
-            parentTitle ||
-            '',
-
-        file:
-            suite.file ||
-            suite.fullFile ||
-            '',
-
-        beforeHooks:
-            suite.beforeHooks || [],
-
-        afterHooks:
-            suite.afterHooks || [],
-
-        tests:
-            suite.tests || [],
-
-        suites:
-            suite.suites || [],
-
-        root:
-            suite.root ?? false,
-
-        _timeout:
-            suite._timeout ?? 0,
-
-        passes:
-            suite.passes || [],
-
-        failures:
-            suite.failures || [],
-
-        pending:
-            suite.pending || [],
-
-        skipped:
-            suite.skipped || [],
-    };
-
-    /*
-     * Normalize tests.
-     */
-    normalized.tests =
-        normalized.tests.map(test => ({
-            ...test,
-            uuid: test.uuid || uuid(),
-        }));
-
-    /*
-     * Recalculate suite UUID lists from tests.
-     */
-    normalized.passes = [];
-    normalized.failures = [];
-    normalized.pending = [];
-    normalized.skipped = [];
-
-    for (const test of normalized.tests) {
-        if (test.pass) {
-            normalized.passes.push(test.uuid);
-        }
-
-        if (test.fail) {
-            normalized.failures.push(test.uuid);
-        }
-
-        if (test.pending) {
-            normalized.pending.push(test.uuid);
-        }
-
-        if (test.skipped) {
-            normalized.skipped.push(test.uuid);
-        }
-    }
-
-    /*
-     * Recursively normalize child suites.
-     */
-    normalized.suites =
-        normalized.suites.map(child =>
-            normalizeSuite(
-                child,
-                normalized.title
-            )
-        );
-
-    return normalized;
-}
-
-/**
- * Create one project suite containing all original
- * Mochawesome suites.
- */
-function createProjectSuite(
-    projectName,
-    report
-) {
-    const projectSuites = [];
-
-    for (const result of report.results || []) {
-        for (const suite of result.suites || []) {
-            projectSuites.push(
-                normalizeSuite(
-                    suite,
-                    projectName
-                )
-            );
-        }
-    }
-
-    /*
-     * Project itself becomes a suite.
-     *
-     * Dashboard
-     *   ├── suite 1
-     *   ├── suite 2
-     *
-     * Ask AI
-     *   ├── suite 1
-     *   └── suite 2
-     */
-    const projectSuite = {
-        uuid: uuid(),
-
-        title: projectName,
-
-        fullFile: projectName,
-
-        file: projectName,
-
-        beforeHooks: [],
-
-        afterHooks: [],
-
-        tests: [],
-
-        suites: projectSuites,
-
-        root: false,
-
-        _timeout: 0,
-
-        passes: [],
-        failures: [],
-        pending: [],
-        skipped: [],
-    };
-
-    /*
-     * Project-level status arrays.
-     */
-    function collectFromSuites(suites) {
-        for (const suite of suites || []) {
-
-            projectSuite.passes.push(
-                ...(suite.passes || [])
-            );
-
-            projectSuite.failures.push(
-                ...(suite.failures || [])
-            );
-
-            projectSuite.pending.push(
-                ...(suite.pending || [])
-            );
-
-            projectSuite.skipped.push(
-                ...(suite.skipped || [])
-            );
-
-            collectFromSuites(
-                suite.suites
-            );
-        }
-    }
-
-    collectFromSuites(
-        projectSuite.suites
-    );
-
-    return projectSuite;
-}
-
-function main() {
+function findProjectReports() {
+    const projects = [];
 
     if (!fs.existsSync(SOURCE_DIR)) {
         throw new Error(
@@ -449,231 +97,215 @@ function main() {
     }
 
     const projectDirectories = fs
-        .readdirSync(
-            SOURCE_DIR,
-            {
-                withFileTypes: true,
-            }
-        )
-        .filter(entry => entry.isDirectory())
-        .map(entry => entry.name);
+        .readdirSync(SOURCE_DIR, {
+            withFileTypes: true,
+        })
+        .filter(entry => entry.isDirectory());
 
-    if (projectDirectories.length === 0) {
-        throw new Error(
-            'No project directories found.'
+    for (const directory of projectDirectories) {
+        const projectId = directory.name;
+
+        const projectDirectory = path.join(
+            SOURCE_DIR,
+            projectId
         );
+
+        const jsonFiles = [];
+
+        function scan(dir) {
+            for (const entry of fs.readdirSync(dir, {
+                withFileTypes: true,
+            })) {
+                const fullPath = path.join(
+                    dir,
+                    entry.name
+                );
+
+                if (entry.isDirectory()) {
+                    scan(fullPath);
+                } else if (
+                    entry.isFile() &&
+                    entry.name === 'index.json'
+                ) {
+                    jsonFiles.push(fullPath);
+                }
+            }
+        }
+
+        scan(projectDirectory);
+
+        if (jsonFiles.length === 0) {
+            console.warn(
+                `WARNING: No index.json found for ${projectId}`
+            );
+            continue;
+        }
+
+        /*
+         * Normally there should be one index.json.
+         * If there are multiple, use the first one.
+         */
+        const reportPath = jsonFiles[0];
+
+        projects.push({
+            projectId,
+            projectName:
+                PROJECT_NAMES[projectId] ||
+                projectId,
+            reportPath,
+        });
     }
 
-    console.log(
-        `Found ${projectDirectories.length} projects.`
-    );
+    return projects;
+}
 
-    const stats = emptyStats();
+function createProjectResult(
+    projectName,
+    report
+) {
+    const projectResult = {
+        uuid: generateUUID(),
 
-    /*
-     * Root result expected by Mochawesome.
-     */
-    const rootResult = {
-        uuid: uuid(),
+        /*
+         * IMPORTANT:
+         * This is the project name.
+         */
+        title: projectName,
 
-        title: 'Consolidated E2E Tests',
-
-        fullFile: 'consolidated',
-
-        file: 'consolidated',
-
-        beforeHooks: [],
-
-        afterHooks: [],
-
-        tests: [],
-
-        suites: [],
+        fullFile: projectName,
+        file: projectName,
 
         root: true,
 
-        _timeout: 0,
+        _timeout: false,
 
+        beforeHooks: [],
+        afterHooks: [],
+
+        tests: [],
         passes: [],
         failures: [],
         pending: [],
         skipped: [],
+
+        suites: [],
     };
 
-    for (
-        const projectDirectory
-        of projectDirectories
-    ) {
-
-        const projectName =
-            PROJECT_NAMES[
-                projectDirectory
-            ] ||
-            projectDirectory;
-
-        console.log('');
-        console.log(
-            '========================================'
-        );
-        console.log(
-            `Processing: ${projectName}`
-        );
-        console.log(
-            '========================================'
-        );
-
-        const projectPath =
-            path.join(
-                SOURCE_DIR,
-                projectDirectory
-            );
-
-        const reportPath =
-            findIndexJson(
-                projectPath
-            );
-
-        if (!reportPath) {
-            throw new Error(
-                `No index.json found for ${projectName}`
-            );
+    /*
+     * Preserve all suites belonging to
+     * this project.
+     */
+    for (const result of report.results || []) {
+        for (const suite of result.suites || []) {
+            projectResult.suites.push(suite);
         }
 
-        const report =
-            JSON.parse(
-                fs.readFileSync(
-                    reportPath,
-                    'utf8'
-                )
+        if (result.tests?.length) {
+            projectResult.tests.push(
+                ...result.tests
             );
+        }
+    }
 
-        /*
-         * Find the directory containing index.json.
-         *
-         * Example:
-         *
-         * dashboard/
-         *   2026-08-19.../
-         *
-         * reportDirectory =
-         *   2026-08-19...
-         */
-        const relativeReportPath =
-            path.relative(
-                projectPath,
-                reportPath
-            );
+    return projectResult;
+}
 
-        const reportDirectory =
-            path.dirname(
-                relativeReportPath
-            );
+function main() {
+    const projectReports =
+        findProjectReports();
 
-        console.log(
-            `Report: ${reportPath}`
-        );
-
-        console.log(
-            `Report directory: ${reportDirectory}`
-        );
-
-        /*
-         * Rewrite screenshots/videos.
-         */
-        rewriteAssets(
-            report,
-            projectDirectory,
-            reportDirectory === '.'
-                ? ''
-                : reportDirectory
-        );
-
-        console.log(
-            `Tests: ${report.stats?.tests || 0}`
-        );
-
-        console.log(
-            `Passed: ${report.stats?.passes || 0}`
-        );
-
-        console.log(
-            `Failed: ${report.stats?.failures || 0}`
-        );
-
-        /*
-         * Create project grouping.
-         */
-        const projectSuite =
-            createProjectSuite(
-                projectName,
-                report
-            );
-
-        rootResult.suites.push(
-            projectSuite
-        );
-
-        /*
-         * Add project UUIDs to root.
-         */
-        rootResult.passes.push(
-            ...projectSuite.passes
-        );
-
-        rootResult.failures.push(
-            ...projectSuite.failures
-        );
-
-        rootResult.pending.push(
-            ...projectSuite.pending
-        );
-
-        rootResult.skipped.push(
-            ...projectSuite.skipped
-        );
-
-        /*
-         * Add statistics.
-         */
-        addStats(
-            stats,
-            report.stats
+    if (projectReports.length === 0) {
+        throw new Error(
+            'No project reports found.'
         );
     }
 
-    calculateStats(stats);
+    console.log(
+        `Found ${projectReports.length} project reports.`
+    );
 
-    /*
-     * Final Mochawesome-compatible structure.
-     */
     const consolidated = {
-        stats,
+        stats: emptyStats(),
 
-        results: [
-            rootResult,
-        ],
+        results: [],
 
         meta: {
-            mocha: {
-                version: 'unknown',
-            },
+            framework: 'mochawesome',
+            version: 'project-grouped',
+            projectCount:
+                projectReports.length,
 
-            mochawesome: {
-                options: {},
-                version: '7.1.3',
-            },
-
-            marge: {
-                options: {},
-                version: '6.2.2',
-            },
+            projects: [],
         },
     };
 
+    for (const project of projectReports) {
+        console.log('');
+        console.log(
+            `Processing: ${project.projectName}`
+        );
+
+        console.log(
+            `JSON: ${project.reportPath}`
+        );
+
+        const report = JSON.parse(
+            fs.readFileSync(
+                project.reportPath,
+                'utf8'
+            )
+        );
+
+        const projectResult =
+            createProjectResult(
+                project.projectName,
+                report
+            );
+
+        /*
+         * ONE result per MFE project.
+         */
+        consolidated.results.push(
+            projectResult
+        );
+
+        addStats(
+            consolidated.stats,
+            report.stats
+        );
+
+        consolidated.meta.projects.push({
+            id: project.projectId,
+            name: project.projectName,
+
+            sourceReport:
+                project.reportPath,
+
+            stats: {
+                suites:
+                    report.stats?.suites || 0,
+
+                tests:
+                    report.stats?.tests || 0,
+
+                passed:
+                    report.stats?.passes || 0,
+
+                failed:
+                    report.stats?.failures || 0,
+
+                pending:
+                    report.stats?.pending || 0,
+            },
+        });
+    }
+
+    calculatePercentages(
+        consolidated.stats
+    );
+
     fs.mkdirSync(
-        path.dirname(
-            OUTPUT_FILE
-        ),
+        path.dirname(OUTPUT_FILE),
         {
             recursive: true,
         }
@@ -700,27 +332,23 @@ function main() {
     );
 
     console.log(
-        `Projects: ${projectDirectories.length}`
+        `Projects: ${consolidated.results.length}`
     );
 
     console.log(
-        `Tests: ${stats.tests}`
+        `Tests: ${consolidated.stats.tests}`
     );
 
     console.log(
-        `Passed: ${stats.passes}`
+        `Passed: ${consolidated.stats.passes}`
     );
 
     console.log(
-        `Failed: ${stats.failures}`
+        `Failed: ${consolidated.stats.failures}`
     );
 
     console.log(
-        `Pending: ${stats.pending}`
-    );
-
-    console.log(
-        `Pass %: ${stats.passPercent.toFixed(2)}`
+        `Pending: ${consolidated.stats.pending}`
     );
 
     console.log(
