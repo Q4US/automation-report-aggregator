@@ -89,7 +89,7 @@ function calculatePercentages(stats) {
 
 function findIndexJson(directory) {
     const entries = fs.readdirSync(directory, {
-        withFileTypes: true
+        withFileTypes: true,
     });
 
     for (const entry of entries) {
@@ -118,33 +118,27 @@ function findIndexJson(directory) {
 }
 
 /**
- * Convert an asset path from the original Mochawesome report
- * into a path relative to the consolidated report.
+ * Rewrite screenshot/video paths so they point to
+ * the project-specific directory.
  *
- * Example original:
+ * Example:
  *
- *   videos/test.cy.ts.mp4
+ * screenshots/foo.png
  *
  * becomes:
  *
- *   source-reports/dashboard/videos/test.cy.ts.mp4
- *
- * The exact relative path is calculated from consolidated.json,
- * which lives at:
- *
- *   consolidated-report/consolidated.json
+ * source-reports/dashboard/screenshots/foo.png
  */
-function rewriteAssetPath(assetPath, projectDirectory) {
-    if (!assetPath || typeof assetPath !== 'string') {
+function rewriteAssetPath(
+    assetPath,
+    projectDirectory
+) {
+    if (
+        !assetPath ||
+        typeof assetPath !== 'string'
+    ) {
         return assetPath;
     }
-
-    /*
-     * Ignore:
-     * - URLs
-     * - data URLs
-     * - already absolute URLs
-     */
 
     if (
         assetPath.startsWith('http://') ||
@@ -154,18 +148,6 @@ function rewriteAssetPath(assetPath, projectDirectory) {
         return assetPath;
     }
 
-    /*
-     * Mochawesome normally stores paths such as:
-     *
-     * screenshots/...
-     * videos/...
-     *
-     * We want:
-     *
-     * source-reports/<project>/screenshots/...
-     * source-reports/<project>/videos/...
-     */
-
     const normalized = assetPath
         .replace(/\\/g, '/')
         .replace(/^\/+/, '');
@@ -174,21 +156,18 @@ function rewriteAssetPath(assetPath, projectDirectory) {
         normalized.startsWith('screenshots/') ||
         normalized.startsWith('videos/')
     ) {
-        return path
-            .posix
-            .join(
-                'source-reports',
-                projectDirectory,
-                normalized
-            );
+        return path.posix.join(
+            'source-reports',
+            projectDirectory,
+            normalized
+        );
     }
 
     return assetPath;
 }
 
 /**
- * Recursively walk the Mochawesome result structure and
- * update screenshot/video paths.
+ * Recursively update Mochawesome asset references.
  */
 function rewriteAssetPathsInObject(
     object,
@@ -216,9 +195,9 @@ function rewriteAssetPathsInObject(
             typeof value === 'string' &&
             (
                 key === 'screenshots' ||
+                key === 'screenshot' ||
                 key === 'video' ||
-                key === 'videoPath' ||
-                key === 'screenshot'
+                key === 'videoPath'
             )
         ) {
             object[key] =
@@ -230,7 +209,10 @@ function rewriteAssetPathsInObject(
             continue;
         }
 
-        if (typeof value === 'object') {
+        if (
+            value &&
+            typeof value === 'object'
+        ) {
             rewriteAssetPathsInObject(
                 value,
                 projectDirectory
@@ -239,10 +221,96 @@ function rewriteAssetPathsInObject(
     }
 }
 
-function collectSuites(suites, target) {
-    for (const suite of suites || []) {
-        target.push(suite);
+/**
+ * Collect test UUIDs recursively.
+ *
+ * Mochawesome expects passes/failures/pending/skipped
+ * at the result level as arrays of test UUIDs.
+ */
+function collectTestStatusUUIDs(
+    suites,
+    status
+) {
+    const result = {
+        passes: [],
+        failures: [],
+        pending: [],
+        skipped: [],
+    };
+
+    function walk(suiteList) {
+        for (const suite of suiteList || []) {
+            for (const test of suite.tests || []) {
+                if (!test.uuid) {
+                    continue;
+                }
+
+                if (test.pass) {
+                    result.passes.push(test.uuid);
+                }
+
+                if (test.fail) {
+                    result.failures.push(test.uuid);
+                }
+
+                if (test.pending) {
+                    result.pending.push(test.uuid);
+                }
+
+                if (test.skipped) {
+                    result.skipped.push(test.uuid);
+                }
+            }
+
+            walk(suite.suites);
+        }
     }
+
+    walk(suites);
+
+    return result;
+}
+
+/**
+ * Create one project-level suite.
+ *
+ * This gives us:
+ *
+ * Dashboard
+ *   ├── suite 1
+ *   ├── suite 2
+ *   └── suite 3
+ *
+ * Ask AI
+ *   ├── suite 1
+ *   └── suite 2
+ */
+function createProjectSuite(
+    projectName,
+    report,
+    projectDirectory
+) {
+    const suites = [];
+
+    for (const result of report.results || []) {
+        for (const suite of result.suites || []) {
+            suites.push(suite);
+        }
+    }
+
+    return {
+        uuid: generateUUID(),
+        title: projectName,
+        fullFile: projectName,
+        file: projectName,
+
+        beforeHooks: [],
+        afterHooks: [],
+
+        tests: [],
+
+        suites,
+    };
 }
 
 function main() {
@@ -255,7 +323,9 @@ function main() {
     const projectDirectories = fs
         .readdirSync(
             SOURCE_DIR,
-            { withFileTypes: true }
+            {
+                withFileTypes: true,
+            }
         )
         .filter(entry => entry.isDirectory())
         .map(entry => entry.name);
@@ -270,18 +340,56 @@ function main() {
         `Found ${projectDirectories.length} projects.`
     );
 
-    const consolidated = {
-        stats: emptyStats(),
+    const consolidatedStats = emptyStats();
 
-        results: [],
+    /*
+     * These arrays are required by Mochawesome.
+     */
+    const allPasses = [];
+    const allFailures = [];
+    const allPending = [];
+    const allSkipped = [];
 
-        meta: {
-            framework: 'mochawesome',
-            version: 'project-grouped',
-            projectCount:
-                projectDirectories.length,
-            projects: [],
-        },
+    /*
+     * One ROOT result.
+     *
+     * Under this root:
+     *
+     * Dashboard
+     * Ask AI
+     * User Management
+     * etc.
+     */
+    const rootResult = {
+        uuid: generateUUID(),
+
+        title: 'Consolidated E2E Tests',
+
+        fullFile: 'consolidated',
+
+        file: 'consolidated',
+
+        beforeHooks: [],
+
+        afterHooks: [],
+
+        tests: [],
+
+        suites: [],
+
+        passes: allPasses,
+
+        failures: allFailures,
+
+        pending: allPending,
+
+        skipped: allSkipped,
+
+        duration: 0,
+
+        root: true,
+
+        _timeout: 0,
     };
 
     for (
@@ -330,8 +438,7 @@ function main() {
         );
 
         /*
-         * Rewrite screenshot/video paths BEFORE
-         * adding the report to consolidated.json.
+         * Rewrite asset paths before using the report.
          */
         rewriteAssetPathsInObject(
             report,
@@ -351,92 +458,98 @@ function main() {
         );
 
         /*
-         * One top-level result per MFE.
+         * Create project-level grouping.
          */
-        const projectResult = {
-            uuid: generateUUID(),
-
-            title: projectName,
-
-            fullFile: projectName,
-
-            file: projectName,
-
-            beforeHooks: [],
-
-            afterHooks: [],
-
-            tests: [],
-
-            suites: [],
-        };
-
-        /*
-         * Preserve the original Mochawesome suite hierarchy.
-         */
-        for (const result of report.results || []) {
-            collectSuites(
-                result.suites,
-                projectResult.suites
+        const projectSuite =
+            createProjectSuite(
+                projectName,
+                report,
+                projectDirectory
             );
 
-            if (result.tests?.length) {
-                projectResult.tests.push(
-                    ...result.tests
-                );
-            }
-        }
-
-        consolidated.results.push(
-            projectResult
+        rootResult.suites.push(
+            projectSuite
         );
 
         /*
-         * Add project metadata.
+         * Collect test UUIDs.
          */
-        consolidated.meta.projects.push({
-            id: projectDirectory,
+        const status =
+            collectTestStatusUUIDs(
+                projectSuite.suites
+            );
 
-            name: projectName,
+        allPasses.push(
+            ...status.passes
+        );
 
-            sourceReport:
-                path.relative(
-                    '.',
-                    reportPath
-                ),
+        allFailures.push(
+            ...status.failures
+        );
 
-            stats: {
-                suites:
-                    report.stats?.suites || 0,
+        allPending.push(
+            ...status.pending
+        );
 
-                tests:
-                    report.stats?.tests || 0,
+        allSkipped.push(
+            ...status.skipped
+        );
 
-                passed:
-                    report.stats?.passes || 0,
-
-                failed:
-                    report.stats?.failures || 0,
-
-                pending:
-                    report.stats?.pending || 0,
-            },
-        });
-
+        /*
+         * Add project statistics.
+         */
         addStats(
-            consolidated.stats,
+            consolidatedStats,
             report.stats
         );
     }
 
     calculatePercentages(
-        consolidated.stats
+        consolidatedStats
     );
+
+    rootResult.duration =
+        consolidatedStats.duration;
+
+    /*
+     * Valid Mochawesome meta structure.
+     *
+     * Do NOT put custom fields such as:
+     *
+     * meta.framework
+     * meta.projectCount
+     * meta.projects
+     *
+     * because marge validates the schema.
+     */
+    const consolidated = {
+        stats: consolidatedStats,
+
+        results: [
+            rootResult,
+        ],
+
+        meta: {
+            mocha: {
+                version: 'unknown',
+            },
+
+            mochawesome: {
+                options: {},
+                version: '7.1.3',
+            },
+
+            marge: {
+                options: {},
+                version: '6.2.2',
+            },
+        },
+    };
 
     fs.mkdirSync(
         path.dirname(OUTPUT_FILE),
         {
-            recursive: true
+            recursive: true,
         }
     );
 
@@ -453,37 +566,37 @@ function main() {
     console.log(
         '========================================'
     );
+
     console.log(
-        'Consolidated Report Created'
+        'PROJECT-GROUPED MOCHAWESOME REPORT'
     );
+
     console.log(
         '========================================'
     );
 
     console.log(
-        `Projects: ${consolidated.results.length}`
+        `Projects: ${projectDirectories.length}`
     );
 
     console.log(
-        `Tests: ${consolidated.stats.tests}`
+        `Tests: ${consolidatedStats.tests}`
     );
 
     console.log(
-        `Passed: ${consolidated.stats.passes}`
+        `Passed: ${consolidatedStats.passes}`
     );
 
     console.log(
-        `Failed: ${consolidated.stats.failures}`
+        `Failed: ${consolidatedStats.failures}`
     );
 
     console.log(
-        `Pending: ${consolidated.stats.pending}`
+        `Pending: ${consolidatedStats.pending}`
     );
 
     console.log(
-        `Pass %: ${
-            consolidated.stats.passPercent.toFixed(2)
-        }`
+        `Pass %: ${consolidatedStats.passPercent.toFixed(2)}`
     );
 
     console.log(
