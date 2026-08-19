@@ -394,32 +394,36 @@ jobs:
             -print
 
       # ============================================================
-      # 11. Validate all 5 reports exist
+      # 11. Validate all reports exist
       # ============================================================
 
       - name: Validate source reports
         run: |
+          EXPECTED_COUNT=$(echo "$ALL_MFE_REPOSITORIES" | grep -c '[^[:space:]]')
+          
           REPORT_COUNT=$(find consolidated-report/source-reports \
             -type f \
             -name "*.json" | wc -l)
 
-          echo "Number of source reports: $REPORT_COUNT"
+          echo "Expected repositories: $EXPECTED_COUNT"
+          echo "Downloaded reports:    $REPORT_COUNT"
 
-          if [ "$REPORT_COUNT" -ne 5 ]; then
+          echo ""
+          echo "Source reports:"
+          find consolidated-report/source-reports \
+            -type f \
+            -name "*.json" \
+            -print
+
+          if [ "$REPORT_COUNT" -ne "$EXPECTED_COUNT" ]; then
             echo ""
-            echo "ERROR: Expected 5 source reports"
+            echo "ERROR: Expected $EXPECTED_COUNT source reports"
             echo "Found: $REPORT_COUNT"
-            echo ""
-
-            find consolidated-report/source-reports \
-              -type f \
-              -name "*.json" \
-              -print
-
             exit 1
           fi
 
-          echo "All 5 MFE reports are available."
+          echo ""
+          echo "All $EXPECTED_COUNT MFE reports are available."
 
       # ============================================================
       # 12. Merge all Mochawesome JSON reports
