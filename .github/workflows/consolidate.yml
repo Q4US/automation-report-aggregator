@@ -114,10 +114,12 @@ jobs:
       # ============================================================
       ALL_MFE_REPOSITORIES: |
         Q4US/dashboard
-        Q4US/mfe-project-2
-        Q4US/mfe-project-3
-        Q4US/mfe-project-4
-        Q4US/mfe-project-5
+        Q4US/user-management
+        Q4US/ask-ai
+        Q4US/profile
+        Q4US/react-tree
+        Q4US/error-reports
+        Q4US/audit
 
     steps:
 
