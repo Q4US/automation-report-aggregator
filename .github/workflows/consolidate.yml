@@ -247,7 +247,7 @@ jobs:
       # 8. Prepare triggering repository JSON
       # ============================================================
 
-      - name: Prepare triggering repository JSON
+      - name: Prepare triggering repository report
         env:
           REPOSITORY: ${{ steps.trigger.outputs.repository }}
         run: |
@@ -262,14 +262,15 @@ jobs:
             exit 1
           fi
 
-          echo "Found triggering report:"
-          echo "$REPORT_JSON"
+          mkdir -p "consolidated-report/source-reports/$REPO_NAME"
 
-          cp "$REPORT_JSON" \
-            "consolidated-report/source-reports/$REPO_NAME.json"
+          cp -R \
+            "reports/$REPO_NAME/." \
+            "consolidated-report/source-reports/$REPO_NAME/"
 
-          echo "Prepared:"
-          echo "consolidated-report/source-reports/$REPO_NAME.json"
+          echo "Prepared $REPO_NAME"
+          find "consolidated-report/source-reports/$REPO_NAME" \
+            -type f -print
 
       # ============================================================
       # 9. Download latest reports from OTHER MFEs
@@ -366,17 +367,30 @@ jobs:
             echo "Found JSON:"
             echo "$REPORT_JSON"
 
-            # ------------------------------------------------------
-            # Copy to consolidated source directory
-            # ------------------------------------------------------
+            # ----------------------------------------------------------
+            # Copy entire report including:
+            #   index.json
+            #   screenshots
+            #   videos
+            # ----------------------------------------------------------
 
-            cp "$REPORT_JSON" \
-              "consolidated-report/source-reports/$REPO_NAME.json"
+            mkdir -p \
+              "consolidated-report/source-reports/$REPO_NAME"
+
+            cp -R \
+              "reports/$REPO_NAME/." \
+              "consolidated-report/source-reports/$REPO_NAME/"
 
             echo "Prepared:"
-            echo "consolidated-report/source-reports/$REPO_NAME.json"
+            echo "consolidated-report/source-reports/$REPO_NAME"
 
-          done <<< "$ALL_MFE_REPOSITORIES"
+            find \
+              "consolidated-report/source-reports/$REPO_NAME" \
+              -type f \
+              -print
+            
+
+            done <<< "$ALL_MFE_REPOSITORIES"
 
       # ============================================================
       # 10. Display all source reports
@@ -400,44 +414,73 @@ jobs:
       - name: Validate source reports
         run: |
           EXPECTED_COUNT=$(echo "$ALL_MFE_REPOSITORIES" | grep -c '[^[:space:]]')
-          
-          REPORT_COUNT=$(find consolidated-report/source-reports \
-            -type f \
-            -name "*.json" | wc -l)
 
-          echo "Expected repositories: $EXPECTED_COUNT"
-          echo "Downloaded reports:    $REPORT_COUNT"
+          PROJECT_COUNT=$(find consolidated-report/source-reports \
+            -mindepth 1 \
+            -maxdepth 1 \
+            -type d | wc -l)
+
+          echo "Expected projects: $EXPECTED_COUNT"
+          echo "Downloaded projects: $PROJECT_COUNT"
 
           echo ""
-          echo "Source reports:"
+          echo "Projects:"
           find consolidated-report/source-reports \
-            -type f \
-            -name "*.json" \
-            -print
+            -mindepth 1 \
+            -maxdepth 1 \
+            -type d \
+            -printf '%f\n' | sort
 
-          if [ "$REPORT_COUNT" -ne "$EXPECTED_COUNT" ]; then
+          if [ "$PROJECT_COUNT" -ne "$EXPECTED_COUNT" ]; then
             echo ""
-            echo "ERROR: Expected $EXPECTED_COUNT source reports"
-            echo "Found: $REPORT_COUNT"
+            echo "ERROR: Expected $EXPECTED_COUNT projects"
+            echo "Found: $PROJECT_COUNT"
             exit 1
           fi
 
           echo ""
-          echo "All $EXPECTED_COUNT MFE reports are available."
+          echo "All $EXPECTED_COUNT project reports are available."
 
+          echo ""
+          echo "Checking index.json files..."
+
+          for PROJECT_DIR in consolidated-report/source-reports/*; do
+
+            [ -d "$PROJECT_DIR" ] || continue
+
+            REPORT_JSON=$(find "$PROJECT_DIR" \
+              -name "index.json" \
+              -type f | head -1)
+
+            if [ -z "$REPORT_JSON" ]; then
+              echo "ERROR: No index.json found in $PROJECT_DIR"
+              exit 1
+            fi
+
+            echo "OK: $REPORT_JSON"
+
+          done
+
+      - name: Create project-grouped consolidated JSON
+        run: |
+          echo "========================================"
+          echo "CREATING PROJECT-GROUPED JSON"
+          echo "========================================"
+
+          node .github/scripts/consolidate-mochawesome.js
       # ============================================================
       # 12. Merge all Mochawesome JSON reports
       # ============================================================
 
-      - name: Merge Mochawesome reports
-        run: |
-          echo "========================================"
-          echo "MERGING REPORTS"
-          echo "========================================"
+      # - name: Merge Mochawesome reports
+      #   run: |
+      #     echo "========================================"
+      #     echo "MERGING REPORTS"
+      #     echo "========================================"
 
-          npx mochawesome-merge \
-            "consolidated-report/source-reports/*.json" \
-            -o consolidated-report/consolidated.json
+      #     npx mochawesome-merge \
+      #       "consolidated-report/source-reports/*.json" \
+      #       -o consolidated-report/consolidated.json
 
       # ============================================================
       # 13. Verify consolidated JSON
@@ -478,7 +521,45 @@ jobs:
             process.exit(1);
           }
           NODE
+      # ============================================================
+      # 14. Validating assets in consolidated JSON
+      # ============================================================
 
+      - name: Validate consolidated assets
+        run: |
+          echo "========================================"
+          echo "VALIDATING REPORT ASSETS"
+          echo "========================================"
+
+          echo ""
+          echo "Project directories:"
+          find consolidated-report/source-reports \
+            -mindepth 1 \
+            -maxdepth 1 \
+            -type d \
+            -printf '%f\n' \
+            | sort
+
+          echo ""
+          echo "JSON files:"
+          find consolidated-report/source-reports \
+            -name "index.json" \
+            -type f \
+            -print
+
+          echo ""
+          echo "Screenshots:"
+          find consolidated-report/source-reports \
+            -type f \
+            -path "*/screenshots/*" \
+            | wc -l
+
+          echo ""
+          echo "Videos:"
+          find consolidated-report/source-reports \
+            -type f \
+            -path "*/videos/*" \
+            | wc -l
       # ============================================================
       # 14. Generate consolidated HTML
       # ============================================================
