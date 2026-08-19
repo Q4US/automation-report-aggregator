@@ -124,7 +124,14 @@ jobs:
     steps:
 
       # ============================================================
-      # 1. Display trigger information
+      # 1. Checkout aggregator repository
+      # ============================================================
+
+      - name: Checkout aggregator repository
+        uses: actions/checkout@v4
+
+      # ============================================================
+      # 2. Display trigger information
       # ============================================================
 
       - name: Show trigger information
@@ -140,7 +147,7 @@ jobs:
           echo "Trigger Commit:     ${{ github.event.client_payload.sha }}"
 
       # ============================================================
-      # 2. Setup Node
+      # 3. Setup Node
       # ============================================================
 
       - name: Setup Node
@@ -149,14 +156,14 @@ jobs:
           node-version: 22
 
       # ============================================================
-      # 3. Initialize Node project
+      # 4. Initialize Node project
       # ============================================================
 
       - name: Initialize Node project
         run: npm init -y
 
       # ============================================================
-      # 4. Install Mochawesome tools
+      # 5. Install Mochawesome tools
       # ============================================================
 
       - name: Install Mochawesome tools
@@ -165,7 +172,7 @@ jobs:
           npm install mochawesome-report-generator
 
       # ============================================================
-      # 5. Prepare directories
+      # 6. Prepare directories
       # ============================================================
 
       - name: Prepare directories
@@ -177,7 +184,7 @@ jobs:
           mkdir -p consolidated-report/source-reports
 
       # ============================================================
-      # 6. Determine triggering repository
+      # 7. Determine triggering repository
       # ============================================================
 
       - name: Determine triggering repository
@@ -211,7 +218,7 @@ jobs:
           echo "run_number=$TRIGGER_RUN_NUMBER" >> "$GITHUB_OUTPUT"
 
       # ============================================================
-      # 7. Download EXACT report from triggering repository
+      # 8. Download EXACT report from triggering repository
       # ============================================================
 
       - name: Download triggering repository report
@@ -244,7 +251,7 @@ jobs:
             --dir "reports/$REPO_NAME"
 
       # ============================================================
-      # 8. Prepare triggering repository JSON
+      # 9. Prepare triggering repository JSON
       # ============================================================
 
       - name: Prepare triggering repository report
@@ -273,7 +280,7 @@ jobs:
             -type f -print
 
       # ============================================================
-      # 9. Download latest reports from OTHER MFEs
+      # 10. Download latest reports from OTHER MFEs
       # ============================================================
 
       - name: Download latest reports from other MFEs
@@ -393,7 +400,7 @@ jobs:
             done <<< "$ALL_MFE_REPOSITORIES"
 
       # ============================================================
-      # 10. Display all source reports
+      # 11. Display all source reports
       # ============================================================
 
       - name: Show source reports
@@ -408,7 +415,7 @@ jobs:
             -print
 
       # ============================================================
-      # 11. Validate all reports exist
+      # 12. Validate all reports exist
       # ============================================================
 
       - name: Validate source reports
@@ -468,19 +475,7 @@ jobs:
           echo "========================================"
 
           node .github/scripts/consolidate-mochawesome.js
-      # ============================================================
-      # 12. Merge all Mochawesome JSON reports
-      # ============================================================
-
-      # - name: Merge Mochawesome reports
-      #   run: |
-      #     echo "========================================"
-      #     echo "MERGING REPORTS"
-      #     echo "========================================"
-
-      #     npx mochawesome-merge \
-      #       "consolidated-report/source-reports/*.json" \
-      #       -o consolidated-report/consolidated.json
+      
 
       # ============================================================
       # 13. Verify consolidated JSON
@@ -561,7 +556,7 @@ jobs:
             -path "*/videos/*" \
             | wc -l
       # ============================================================
-      # 14. Generate consolidated HTML
+      # 15. Generate consolidated HTML
       # ============================================================
 
       - name: Generate consolidated HTML report
@@ -574,7 +569,7 @@ jobs:
             --reportFilename index.html
 
       # ============================================================
-      # 15. Show final report structure
+      # 16. Show final report structure
       # ============================================================
 
       - name: Show final report structure
@@ -588,7 +583,7 @@ jobs:
             -print
 
       # ============================================================
-      # 16. Upload consolidated report
+      # 17. Upload consolidated report
       # ============================================================
 
       - name: Upload consolidated report
