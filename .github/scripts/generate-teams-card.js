@@ -10,14 +10,26 @@ const OUTPUT_FILE =
     process.argv[3] ||
     './teams-card.json';
 
+
+// ============================================================
+// Helpers
+// ============================================================
+
 function toNumber(value) {
     return Number(value) || 0;
 }
 
+
+// ============================================================
+// Get project statistics
+// ============================================================
+
 function getProjectStats(project) {
 
-    // Preferred source
+    // Preferred source:
+    // consolidated.json -> meta.projects[].stats
     if (project.stats) {
+
         return {
             tests: toNumber(project.stats.tests),
             passed: toNumber(project.stats.passed),
@@ -26,13 +38,18 @@ function getProjectStats(project) {
         };
     }
 
+
+    // --------------------------------------------------------
     // Fallback calculation
+    // --------------------------------------------------------
+
     const stats = {
         tests: 0,
         passed: 0,
         failed: 0,
         pending: 0,
     };
+
 
     function processTests(tests) {
 
@@ -46,17 +63,20 @@ function getProjectStats(project) {
             ) {
                 stats.passed++;
             }
+
             else if (
                 test.fail === true ||
                 test.state === 'failed'
             ) {
                 stats.failed++;
             }
+
             else {
                 stats.pending++;
             }
         }
     }
+
 
     function processSuite(suite) {
 
@@ -67,18 +87,27 @@ function getProjectStats(project) {
         }
     }
 
+
     for (const suite of project.suites || []) {
         processSuite(suite);
     }
 
+
     processTests(project.tests);
+
 
     return stats;
 }
 
+
+// ============================================================
+// Create one project row
+// ============================================================
+
 function createProjectRow(project) {
 
     const stats = getProjectStats(project);
+
 
     const passRate =
         stats.tests > 0
@@ -88,160 +117,221 @@ function createProjectRow(project) {
             ).toFixed(1)
             : '0.0';
 
-    let status = 'PASS';
-    let statusColor = 'Good';
+
+    let passRateColor = 'Good';
+
 
     if (stats.failed > 0) {
-        status = 'FAIL';
-        statusColor = 'Attention';
+        passRateColor = 'Attention';
     }
+
     else if (stats.pending > 0) {
-        status = 'WARNING';
-        statusColor = 'Warning';
+        passRateColor = 'Warning';
     }
+
 
     return {
-        type: 'Container',
+
+        type: 'ColumnSet',
+
         separator: true,
+
         spacing: 'Small',
 
-        items: [
+
+        columns: [
+
+            // =================================================
+            // Project
+            // =================================================
 
             {
-                type: 'ColumnSet',
+                type: 'Column',
 
-                columns: [
+                width: '3',
 
-                    {
-                        type: 'Column',
-                        width: 'stretch',
-
-                        items: [
-                            {
-                                type: 'TextBlock',
-                                text:
-                                    project.name ||
-                                    project.title ||
-                                    project.id ||
-                                    'Unknown Project',
-
-                                wrap: true,
-
-                                weight: 'Bolder',
-
-                                size: 'Small',
-                            },
-                        ],
-                    },
+                items: [
 
                     {
-                        type: 'Column',
-                        width: 'auto',
+                        type: 'TextBlock',
 
-                        items: [
-                            {
-                                type: 'TextBlock',
-                                text:
-                                    `${stats.tests} tests`,
+                        text:
+                            project.name ||
+                            project.title ||
+                            project.id ||
+                            'Unknown Project',
 
-                                size: 'Small',
+                        wrap: true,
 
-                                horizontalAlignment:
-                                    'Right',
-                            },
-                        ],
+                        weight: 'Bolder',
+
+                        size: 'Small',
                     },
 
-                    {
-                        type: 'Column',
-                        width: 'auto',
-
-                        items: [
-                            {
-                                type: 'TextBlock',
-                                text:
-                                    `${stats.passed} passed`,
-
-                                size: 'Small',
-
-                                color: 'Good',
-
-                                horizontalAlignment:
-                                    'Right',
-                            },
-                        ],
-                    },
-
-                    {
-                        type: 'Column',
-                        width: 'auto',
-
-                        items: [
-                            {
-                                type: 'TextBlock',
-                                text:
-                                    `${stats.failed} failed`,
-
-                                size: 'Small',
-
-                                color:
-                                    stats.failed > 0
-                                        ? 'Attention'
-                                        : 'Default',
-
-                                horizontalAlignment:
-                                    'Right',
-                            },
-                        ],
-                    },
-
-                    {
-                        type: 'Column',
-                        width: 'auto',
-
-                        items: [
-                            {
-                                type: 'TextBlock',
-                                text:
-                                    `${stats.pending} N/E`,
-
-                                size: 'Small',
-
-                                color:
-                                    stats.pending > 0
-                                        ? 'Warning'
-                                        : 'Default',
-
-                                horizontalAlignment:
-                                    'Right',
-                            },
-                        ],
-                    },
-
-                    {
-                        type: 'Column',
-                        width: 'auto',
-
-                        items: [
-                            {
-                                type: 'TextBlock',
-                                text:
-                                    `${passRate}%`,
-
-                                size: 'Small',
-
-                                color: statusColor,
-
-                                horizontalAlignment:
-                                    'Right',
-                            },
-                        ],
-                    },
                 ],
             },
+
+
+            // =================================================
+            // Tests
+            // =================================================
+
+            {
+                type: 'Column',
+
+                width: '1',
+
+                items: [
+
+                    {
+                        type: 'TextBlock',
+
+                        text:
+                            String(stats.tests),
+
+                        size: 'Small',
+
+                        horizontalAlignment:
+                            'Right',
+                    },
+
+                ],
+            },
+
+
+            // =================================================
+            // Pass
+            // =================================================
+
+            {
+                type: 'Column',
+
+                width: '1',
+
+                items: [
+
+                    {
+                        type: 'TextBlock',
+
+                        text:
+                            String(stats.passed),
+
+                        size: 'Small',
+
+                        color:
+                            stats.passed > 0
+                                ? 'Good'
+                                : 'Default',
+
+                        horizontalAlignment:
+                            'Right',
+                    },
+
+                ],
+            },
+
+
+            // =================================================
+            // Fail
+            // =================================================
+
+            {
+                type: 'Column',
+
+                width: '1',
+
+                items: [
+
+                    {
+                        type: 'TextBlock',
+
+                        text:
+                            String(stats.failed),
+
+                        size: 'Small',
+
+                        color:
+                            stats.failed > 0
+                                ? 'Attention'
+                                : 'Default',
+
+                        horizontalAlignment:
+                            'Right',
+                    },
+
+                ],
+            },
+
+
+            // =================================================
+            // Not Executed
+            // =================================================
+
+            {
+                type: 'Column',
+
+                width: '1',
+
+                items: [
+
+                    {
+                        type: 'TextBlock',
+
+                        text:
+                            String(stats.pending),
+
+                        size: 'Small',
+
+                        color:
+                            stats.pending > 0
+                                ? 'Warning'
+                                : 'Default',
+
+                        horizontalAlignment:
+                            'Right',
+                    },
+
+                ],
+            },
+
+
+            // =================================================
+            // Pass %
+            // =================================================
+
+            {
+                type: 'Column',
+
+                width: '1',
+
+                items: [
+
+                    {
+                        type: 'TextBlock',
+
+                        text:
+                            `${passRate}%`,
+
+                        size: 'Small',
+
+                        color:
+                            passRateColor,
+
+                        horizontalAlignment:
+                            'Right',
+                    },
+
+                ],
+            },
+
         ],
     };
 }
+
+
+// ============================================================
+// Main
+// ============================================================
 
 function main() {
 
@@ -257,12 +347,18 @@ function main() {
         '========================================'
     );
 
+
+    // ========================================================
+    // Validate consolidated JSON
+    // ========================================================
+
     if (!fs.existsSync(JSON_PATH)) {
 
         throw new Error(
             `Consolidated JSON not found: ${JSON_PATH}`
         );
     }
+
 
     const report =
         JSON.parse(
@@ -272,16 +368,20 @@ function main() {
             )
         );
 
+
     const stats =
         report.stats || {};
 
-    /*
-     * ----------------------------------------------------
-     * Get projects
-     * ----------------------------------------------------
-     */
+
+    // ========================================================
+    // Get projects dynamically
+    // ========================================================
 
     let projects = [];
+
+
+    // Preferred source:
+    // consolidated.json -> meta.projects
 
     if (
         Array.isArray(
@@ -293,14 +393,20 @@ function main() {
         projects =
             report.meta.projects.map(
                 project => ({
+
                     ...project,
 
                     name:
                         project.name ||
                         project.id,
+
                 })
             );
     }
+
+
+    // Fallback:
+    // consolidated.json -> results
 
     else if (
         Array.isArray(
@@ -311,6 +417,7 @@ function main() {
         projects =
             report.results.map(
                 project => ({
+
                     ...project,
 
                     id:
@@ -321,32 +428,37 @@ function main() {
                         project.name ||
                         project.title ||
                         project.file,
+
                 })
             );
     }
+
 
     console.log(
         `Projects detected: ${projects.length}`
     );
 
-    /*
-     * ----------------------------------------------------
-     * Overall statistics
-     * ----------------------------------------------------
-     */
+
+    // ========================================================
+    // Overall statistics
+    // ========================================================
 
     const totalTests =
         toNumber(stats.tests);
 
+
     const totalPassed =
         toNumber(stats.passes);
+
 
     const totalFailed =
         toNumber(stats.failures);
 
+
     const totalPending =
         toNumber(stats.pending) +
         toNumber(stats.skipped);
+
 
     const passRate =
         totalTests > 0
@@ -356,37 +468,16 @@ function main() {
             ).toFixed(2)
             : '0.00';
 
-    let overallStatus =
-        'PASSED';
 
-    let overallColor =
-        'Good';
-
-    if (totalFailed > 0) {
-
-        overallStatus =
-            'FAILED';
-
-        overallColor =
-            'Attention';
-    }
-
-    else if (totalPending > 0) {
-
-        overallStatus =
-            'PASSED WITH WARNINGS';
-
-        overallColor =
-            'Warning';
-    }
-
-    /*
-     * ----------------------------------------------------
-     * Adaptive Card body
-     * ----------------------------------------------------
-     */
+    // ========================================================
+    // Adaptive Card body
+    // ========================================================
 
     const body = [
+
+        // ====================================================
+        // Title
+        // ====================================================
 
         {
             type: 'TextBlock',
@@ -399,21 +490,15 @@ function main() {
             size: 'Large',
         },
 
-        {
-            type: 'TextBlock',
 
-            text:
-                `Overall Status: ${overallStatus}`,
-
-            weight: 'Bolder',
-
-            color: overallColor,
-
-            spacing: 'Small',
-        },
+        // ====================================================
+        // Overall Summary
+        // ====================================================
 
         {
             type: 'FactSet',
+
+            spacing: 'Medium',
 
             facts: [
 
@@ -427,6 +512,7 @@ function main() {
                         ),
                 },
 
+
                 {
                     title:
                         'Total Tests',
@@ -436,6 +522,7 @@ function main() {
                             totalTests
                         ),
                 },
+
 
                 {
                     title:
@@ -447,6 +534,7 @@ function main() {
                         ),
                 },
 
+
                 {
                     title:
                         'Failed',
@@ -456,6 +544,7 @@ function main() {
                             totalFailed
                         ),
                 },
+
 
                 {
                     title:
@@ -467,6 +556,7 @@ function main() {
                         ),
                 },
 
+
                 {
                     title:
                         'Pass Rate',
@@ -474,8 +564,14 @@ function main() {
                     value:
                         `${passRate}%`,
                 },
+
             ],
         },
+
+
+        // ====================================================
+        // Project Results title
+        // ====================================================
 
         {
             type: 'TextBlock',
@@ -490,109 +586,217 @@ function main() {
             spacing: 'Medium',
         },
 
-        /*
-         * Header
-         */
+
+        // ====================================================
+        // Project table header
+        // ====================================================
 
         {
             type: 'ColumnSet',
 
             separator: true,
 
+            spacing: 'Small',
+
             columns: [
 
-                {
-                    type: 'Column',
-                    width: 'stretch',
-
-                    items: [
-                        {
-                            type: 'TextBlock',
-                            text: 'Project',
-                            weight: 'Bolder',
-                            size: 'Small',
-                        },
-                    ],
-                },
+                // ------------------------------------------------
+                // Project
+                // ------------------------------------------------
 
                 {
                     type: 'Column',
-                    width: 'auto',
+
+                    width: '3',
 
                     items: [
+
                         {
                             type: 'TextBlock',
-                            text: 'Tests',
-                            weight: 'Bolder',
-                            size: 'Small',
+
+                            text:
+                                'Project',
+
+                            weight:
+                                'Bolder',
+
+                            size:
+                                'Small',
+
                         },
+
                     ],
                 },
+
+
+                // ------------------------------------------------
+                // Tests
+                // ------------------------------------------------
 
                 {
                     type: 'Column',
-                    width: 'auto',
+
+                    width: '1',
 
                     items: [
+
                         {
                             type: 'TextBlock',
-                            text: 'Pass',
-                            weight: 'Bolder',
-                            size: 'Small',
+
+                            text:
+                                'Tests',
+
+                            weight:
+                                'Bolder',
+
+                            size:
+                                'Small',
+
+                            horizontalAlignment:
+                                'Right',
+
                         },
+
                     ],
                 },
+
+
+                // ------------------------------------------------
+                // Pass
+                // ------------------------------------------------
 
                 {
                     type: 'Column',
-                    width: 'auto',
+
+                    width: '1',
 
                     items: [
+
                         {
                             type: 'TextBlock',
-                            text: 'Fail',
-                            weight: 'Bolder',
-                            size: 'Small',
+
+                            text:
+                                'Pass',
+
+                            weight:
+                                'Bolder',
+
+                            size:
+                                'Small',
+
+                            horizontalAlignment:
+                                'Right',
+
                         },
+
                     ],
                 },
+
+
+                // ------------------------------------------------
+                // Fail
+                // ------------------------------------------------
 
                 {
                     type: 'Column',
-                    width: 'auto',
+
+                    width: '1',
 
                     items: [
+
                         {
                             type: 'TextBlock',
-                            text: 'N/E',
-                            weight: 'Bolder',
-                            size: 'Small',
+
+                            text:
+                                'Fail',
+
+                            weight:
+                                'Bolder',
+
+                            size:
+                                'Small',
+
+                            horizontalAlignment:
+                                'Right',
+
                         },
+
                     ],
                 },
+
+
+                // ------------------------------------------------
+                // Not Executed
+                // ------------------------------------------------
 
                 {
                     type: 'Column',
-                    width: 'auto',
+
+                    width: '1',
 
                     items: [
+
                         {
                             type: 'TextBlock',
-                            text: 'Pass %',
-                            weight: 'Bolder',
-                            size: 'Small',
+
+                            text:
+                                'N/E',
+
+                            weight:
+                                'Bolder',
+
+                            size:
+                                'Small',
+
+                            horizontalAlignment:
+                                'Right',
+
                         },
+
                     ],
                 },
+
+
+                // ------------------------------------------------
+                // Pass %
+                // ------------------------------------------------
+
+                {
+                    type: 'Column',
+
+                    width: '1',
+
+                    items: [
+
+                        {
+                            type: 'TextBlock',
+
+                            text:
+                                'Pass %',
+
+                            weight:
+                                'Bolder',
+
+                            size:
+                                'Small',
+
+                            horizontalAlignment:
+                                'Right',
+
+                        },
+
+                    ],
+                },
+
             ],
         },
+
     ];
 
-    /*
-     * ----------------------------------------------------
-     * Add one compact row per MFE
-     * ----------------------------------------------------
-     */
+
+    // ========================================================
+    // Add one row per MFE project
+    // ========================================================
 
     for (const project of projects) {
 
@@ -603,11 +807,10 @@ function main() {
         );
     }
 
-    /*
-     * ----------------------------------------------------
-     * Timestamp
-     * ----------------------------------------------------
-     */
+
+    // ========================================================
+    // Generated timestamp
+    // ========================================================
 
     body.push({
 
@@ -627,19 +830,21 @@ function main() {
         size: 'Small',
 
         spacing: 'Medium',
+
     });
 
-    /*
-     * ----------------------------------------------------
-     * GitHub Actions button
-     * ----------------------------------------------------
-     */
+
+    // ========================================================
+    // GitHub Actions / Artifact button
+    // ========================================================
 
     const actions = [];
+
 
     const runUrl =
         process.env.REPORT_RUN_URL ||
         '';
+
 
     if (runUrl) {
 
@@ -653,14 +858,14 @@ function main() {
 
             url:
                 runUrl,
+
         });
     }
 
-    /*
-     * ----------------------------------------------------
-     * Final card
-     * ----------------------------------------------------
-     */
+
+    // ========================================================
+    // Final Adaptive Card
+    // ========================================================
 
     const card = {
 
@@ -685,13 +890,28 @@ function main() {
                     version:
                         '1.4',
 
-                    body,
+                    body:
+                        body,
 
-                    actions,
+                    actions:
+                        actions,
+
+                    msteams: {
+                        width: 'Full',
+                    },
+
                 },
+
             },
+
         ],
+
     };
+
+
+    // ========================================================
+    // Write card JSON
+    // ========================================================
 
     fs.writeFileSync(
 
@@ -702,24 +922,30 @@ function main() {
             null,
             2
         )
+
     );
 
-    /*
-     * ----------------------------------------------------
-     * Size check
-     * ----------------------------------------------------
-     */
+
+    // ========================================================
+    // Validate generated file
+    // ========================================================
 
     const fileSize =
         fs.statSync(
             OUTPUT_FILE
         ).size;
 
+
     const fileSizeKB =
         (
             fileSize /
             1024
         ).toFixed(2);
+
+
+    // ========================================================
+    // Console output
+    // ========================================================
 
     console.log('');
 
@@ -735,49 +961,55 @@ function main() {
         '========================================'
     );
 
+
     console.log(
         `Projects: ${projects.length}`
     );
+
 
     console.log(
         `Tests: ${totalTests}`
     );
 
+
     console.log(
         `Passed: ${totalPassed}`
     );
+
 
     console.log(
         `Failed: ${totalFailed}`
     );
 
+
     console.log(
         `Not Executed: ${totalPending}`
     );
+
 
     console.log(
         `Pass Rate: ${passRate}%`
     );
 
-    console.log(
-        `Status: ${overallStatus}`
-    );
 
     console.log(
         `Card size: ${fileSizeKB} KB`
     );
 
+
     console.log(
         `Run URL: ${runUrl}`
     );
+
 
     console.log(
         `Output: ${OUTPUT_FILE}`
     );
 
-    /*
-     * Warning if approaching Teams limit
-     */
+
+    // ========================================================
+    // Teams payload size warning
+    // ========================================================
 
     if (fileSize > 25 * 1024) {
 
@@ -786,9 +1018,14 @@ function main() {
         );
 
         console.warn(
-            'Keep the card below the 28 KB Teams limit.'
+            'Keep the card below the Teams payload limit.'
         );
     }
 }
+
+
+// ============================================================
+// Execute
+// ============================================================
 
 main();
