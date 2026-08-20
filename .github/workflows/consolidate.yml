@@ -14,7 +14,7 @@ jobs:
 
     env:
       # ============================================================
-      # ALL 5 MFE REPOSITORIES
+      # ALL MFE REPOSITORIES
       # Replace these with your actual repository names.
       # ============================================================
       ALL_MFE_REPOSITORIES: |
@@ -566,6 +566,16 @@ jobs:
             consolidated-report/consolidated.json \
             .github/scripts/template/consolidated-template.xlsm \
             consolidated-report/final
+      
+      - name: Generate Teams Notification
+        id: generate-teams-card
+        env:
+          REPORT_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          node .github/scripts/generate-teams-card.js \
+            consolidated-report/consolidated.json \
+            teams-card.json
+
       # ============================================================
       # 16. Show final report structure
       # ============================================================
@@ -584,17 +594,19 @@ jobs:
       # 17. Upload consolidated report
       # ============================================================
 
-      - name: Upload consolidated report
+      # - name: Upload consolidated report
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: consolidated-mochawesome-report
+      #     path: consolidated-report/
+      
+
+      - name: Upload Final Consolidated Reports
         uses: actions/upload-artifact@v4
         with:
-          name: consolidated-mochawesome-report
-          path: consolidated-report/
-      
-      - name: Generate Teams Notification
-        id: generate-teams-card
-        run: |
-          node .github/scripts/generate-teams-card.js \
-            consolidated-report/consolidated.json \
+          name: consolidated-final-reports
+          path: |
+            consolidated-report/
             teams-card.json
 
       - name: Send Notification to Teams
@@ -602,7 +614,7 @@ jobs:
         env:
           TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
         run: |
-          echo "Sending consolidated report notification to Microsoft Teams..."
+          echo "Sending consolidated E2E report to Microsoft Teams..."
 
           if [ ! -f teams-card.json ]; then
             echo "ERROR: teams-card.json was not generated"
