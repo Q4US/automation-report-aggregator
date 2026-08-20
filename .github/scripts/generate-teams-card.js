@@ -14,64 +14,9 @@ function toNumber(value) {
     return Number(value) || 0;
 }
 
-function getTestStats(tests) {
-    const stats = {
-        tests: 0,
-        passed: 0,
-        failed: 0,
-        pending: 0,
-        skipped: 0,
-    };
-
-    for (const test of tests || []) {
-        stats.tests++;
-
-        if (test.pass === true) {
-            stats.passed++;
-        } else if (test.fail === true) {
-            stats.failed++;
-        } else if (test.pending === true) {
-            stats.pending++;
-        } else if (test.skipped === true) {
-            stats.skipped++;
-        } else if (test.state === 'passed') {
-            stats.passed++;
-        } else if (test.state === 'failed') {
-            stats.failed++;
-        } else if (test.state === 'pending') {
-            stats.pending++;
-        }
-    }
-
-    return stats;
-}
-
-function collectSuiteStats(suite, rows) {
-    const stats = getTestStats(suite.tests || []);
-
-    if (
-        suite.title &&
-        (stats.tests > 0 || suite.tests?.length)
-    ) {
-        rows.push({
-            name: suite.title,
-            tests: stats.tests,
-            passed: stats.passed,
-            failed: stats.failed,
-            pending: stats.pending + stats.skipped,
-        });
-    }
-
-    for (const child of suite.suites || []) {
-        collectSuiteStats(child, rows);
-    }
-}
-
 function getProjectStats(project) {
-    /*
-     * First preference:
-     * consolidated.json meta.projects
-     */
+
+    // Preferred source
     if (project.stats) {
         return {
             tests: toNumber(project.stats.tests),
@@ -81,10 +26,7 @@ function getProjectStats(project) {
         };
     }
 
-    /*
-     * Fallback:
-     * Calculate from the project's tests/suites.
-     */
+    // Fallback calculation
     const stats = {
         tests: 0,
         passed: 0,
@@ -92,15 +34,33 @@ function getProjectStats(project) {
         pending: 0,
     };
 
-    function processSuite(suite) {
-        const result = getTestStats(suite.tests || []);
+    function processTests(tests) {
 
-        stats.tests += result.tests;
-        stats.passed += result.passed;
-        stats.failed += result.failed;
-        stats.pending +=
-            result.pending +
-            result.skipped;
+        for (const test of tests || []) {
+
+            stats.tests++;
+
+            if (
+                test.pass === true ||
+                test.state === 'passed'
+            ) {
+                stats.passed++;
+            }
+            else if (
+                test.fail === true ||
+                test.state === 'failed'
+            ) {
+                stats.failed++;
+            }
+            else {
+                stats.pending++;
+            }
+        }
+    }
+
+    function processSuite(suite) {
+
+        processTests(suite.tests);
 
         for (const child of suite.suites || []) {
             processSuite(child);
@@ -111,333 +71,214 @@ function getProjectStats(project) {
         processSuite(suite);
     }
 
-    for (const test of project.tests || []) {
-        const result = getTestStats([test]);
-
-        stats.tests += result.tests;
-        stats.passed += result.passed;
-        stats.failed += result.failed;
-        stats.pending +=
-            result.pending +
-            result.skipped;
-    }
+    processTests(project.tests);
 
     return stats;
 }
 
-function getProjectSuites(project) {
-    const suites = [];
+function createProjectRow(project) {
 
-    for (const suite of project.suites || []) {
-        collectSuiteStats(suite, suites);
-    }
-
-    return suites;
-}
-
-function createSuiteHeader() {
-    return {
-        type: 'ColumnSet',
-        separator: true,
-        spacing: 'Small',
-
-        columns: [
-            {
-                type: 'Column',
-                width: 'stretch',
-                items: [
-                    {
-                        type: 'TextBlock',
-                        text: 'Suite',
-                        weight: 'Bolder',
-                        size: 'Small',
-                    },
-                ],
-            },
-            {
-                type: 'Column',
-                width: 'auto',
-                items: [
-                    {
-                        type: 'TextBlock',
-                        text: 'T',
-                        weight: 'Bolder',
-                        horizontalAlignment: 'Center',
-                        size: 'Small',
-                    },
-                ],
-            },
-            {
-                type: 'Column',
-                width: 'auto',
-                items: [
-                    {
-                        type: 'TextBlock',
-                        text: 'P',
-                        weight: 'Bolder',
-                        horizontalAlignment: 'Center',
-                        size: 'Small',
-                    },
-                ],
-            },
-            {
-                type: 'Column',
-                width: 'auto',
-                items: [
-                    {
-                        type: 'TextBlock',
-                        text: 'F',
-                        weight: 'Bolder',
-                        horizontalAlignment: 'Center',
-                        size: 'Small',
-                    },
-                ],
-            },
-            {
-                type: 'Column',
-                width: 'auto',
-                items: [
-                    {
-                        type: 'TextBlock',
-                        text: 'N/E',
-                        weight: 'Bolder',
-                        horizontalAlignment: 'Center',
-                        size: 'Small',
-                    },
-                ],
-            },
-        ],
-    };
-}
-
-function createSuiteRow(suite) {
-    return {
-        type: 'ColumnSet',
-        spacing: 'Small',
-        separator: true,
-
-        columns: [
-            {
-                type: 'Column',
-                width: 'stretch',
-                items: [
-                    {
-                        type: 'TextBlock',
-                        text: suite.name,
-                        wrap: true,
-                        size: 'Small',
-                    },
-                ],
-            },
-            {
-                type: 'Column',
-                width: 'auto',
-                items: [
-                    {
-                        type: 'TextBlock',
-                        text: String(suite.tests),
-                        horizontalAlignment: 'Center',
-                        size: 'Small',
-                    },
-                ],
-            },
-            {
-                type: 'Column',
-                width: 'auto',
-                items: [
-                    {
-                        type: 'TextBlock',
-                        text: String(suite.passed),
-                        horizontalAlignment: 'Center',
-                        color:
-                            suite.passed > 0
-                                ? 'Good'
-                                : 'Default',
-                        size: 'Small',
-                    },
-                ],
-            },
-            {
-                type: 'Column',
-                width: 'auto',
-                items: [
-                    {
-                        type: 'TextBlock',
-                        text: String(suite.failed),
-                        horizontalAlignment: 'Center',
-                        color:
-                            suite.failed > 0
-                                ? 'Attention'
-                                : 'Default',
-                        size: 'Small',
-                    },
-                ],
-            },
-            {
-                type: 'Column',
-                width: 'auto',
-                items: [
-                    {
-                        type: 'TextBlock',
-                        text: String(suite.pending),
-                        horizontalAlignment: 'Center',
-                        color:
-                            suite.pending > 0
-                                ? 'Warning'
-                                : 'Default',
-                        size: 'Small',
-                    },
-                ],
-            },
-        ],
-    };
-}
-
-function createProjectContainer(project) {
     const stats = getProjectStats(project);
 
-    const suites = getProjectSuites(project);
-
-    const projectPassRate =
+    const passRate =
         stats.tests > 0
             ? (
                 (stats.passed / stats.tests) *
                 100
-            ).toFixed(2)
-            : '0.00';
+            ).toFixed(1)
+            : '0.0';
 
-    let projectStatus = 'PASSED';
-    let projectColor = 'Good';
+    let status = 'PASS';
+    let statusColor = 'Good';
 
     if (stats.failed > 0) {
-        projectStatus = 'FAILED';
-        projectColor = 'Attention';
-    } else if (stats.pending > 0) {
-        projectStatus = 'PASSED WITH WARNINGS';
-        projectColor = 'Warning';
+        status = 'FAIL';
+        statusColor = 'Attention';
     }
-
-    const body = [
-        {
-            type: 'TextBlock',
-            text:
-                project.name ||
-                project.title ||
-                project.id ||
-                'Unknown Project',
-            weight: 'Bolder',
-            size: 'Medium',
-        },
-
-        {
-            type: 'TextBlock',
-            text:
-                `Status: ${projectStatus}`,
-            color: projectColor,
-            weight: 'Bolder',
-            spacing: 'Small',
-        },
-
-        {
-            type: 'FactSet',
-            facts: [
-                {
-                    title: 'Total',
-                    value: String(stats.tests),
-                },
-                {
-                    title: 'Passed',
-                    value: String(stats.passed),
-                },
-                {
-                    title: 'Failed',
-                    value: String(stats.failed),
-                },
-                {
-                    title: 'Pending',
-                    value: String(stats.pending),
-                },
-                {
-                    title: 'Pass Rate',
-                    value: `${projectPassRate}%`,
-                },
-            ],
-        },
-    ];
-
-    /*
-     * Add suite-level details
-     */
-    if (suites.length > 0) {
-        body.push({
-            type: 'TextBlock',
-            text: 'Suite Results',
-            weight: 'Bolder',
-            spacing: 'Medium',
-            size: 'Small',
-        });
-
-        body.push(
-            createSuiteHeader()
-        );
-
-        for (const suite of suites) {
-            body.push(
-                createSuiteRow(suite)
-            );
-        }
+    else if (stats.pending > 0) {
+        status = 'WARNING';
+        statusColor = 'Warning';
     }
 
     return {
         type: 'Container',
-
         separator: true,
+        spacing: 'Small',
 
-        spacing: 'Medium',
+        items: [
 
-        items: body,
+            {
+                type: 'ColumnSet',
+
+                columns: [
+
+                    {
+                        type: 'Column',
+                        width: 'stretch',
+
+                        items: [
+                            {
+                                type: 'TextBlock',
+                                text:
+                                    project.name ||
+                                    project.title ||
+                                    project.id ||
+                                    'Unknown Project',
+
+                                wrap: true,
+
+                                weight: 'Bolder',
+
+                                size: 'Small',
+                            },
+                        ],
+                    },
+
+                    {
+                        type: 'Column',
+                        width: 'auto',
+
+                        items: [
+                            {
+                                type: 'TextBlock',
+                                text:
+                                    `${stats.tests} tests`,
+
+                                size: 'Small',
+
+                                horizontalAlignment:
+                                    'Right',
+                            },
+                        ],
+                    },
+
+                    {
+                        type: 'Column',
+                        width: 'auto',
+
+                        items: [
+                            {
+                                type: 'TextBlock',
+                                text:
+                                    `${stats.passed} passed`,
+
+                                size: 'Small',
+
+                                color: 'Good',
+
+                                horizontalAlignment:
+                                    'Right',
+                            },
+                        ],
+                    },
+
+                    {
+                        type: 'Column',
+                        width: 'auto',
+
+                        items: [
+                            {
+                                type: 'TextBlock',
+                                text:
+                                    `${stats.failed} failed`,
+
+                                size: 'Small',
+
+                                color:
+                                    stats.failed > 0
+                                        ? 'Attention'
+                                        : 'Default',
+
+                                horizontalAlignment:
+                                    'Right',
+                            },
+                        ],
+                    },
+
+                    {
+                        type: 'Column',
+                        width: 'auto',
+
+                        items: [
+                            {
+                                type: 'TextBlock',
+                                text:
+                                    `${stats.pending} N/E`,
+
+                                size: 'Small',
+
+                                color:
+                                    stats.pending > 0
+                                        ? 'Warning'
+                                        : 'Default',
+
+                                horizontalAlignment:
+                                    'Right',
+                            },
+                        ],
+                    },
+
+                    {
+                        type: 'Column',
+                        width: 'auto',
+
+                        items: [
+                            {
+                                type: 'TextBlock',
+                                text:
+                                    `${passRate}%`,
+
+                                size: 'Small',
+
+                                color: statusColor,
+
+                                horizontalAlignment:
+                                    'Right',
+                            },
+                        ],
+                    },
+                ],
+            },
+        ],
     };
 }
 
 function main() {
+
     console.log(
         '========================================'
     );
+
     console.log(
         'GENERATING TEAMS NOTIFICATION'
     );
+
     console.log(
         '========================================'
     );
 
     if (!fs.existsSync(JSON_PATH)) {
+
         throw new Error(
             `Consolidated JSON not found: ${JSON_PATH}`
         );
     }
 
-    const report = JSON.parse(
-        fs.readFileSync(
-            JSON_PATH,
-            'utf8'
-        )
-    );
+    const report =
+        JSON.parse(
+            fs.readFileSync(
+                JSON_PATH,
+                'utf8'
+            )
+        );
 
-    const stats = report.stats || {};
+    const stats =
+        report.stats || {};
 
     /*
-     * IMPORTANT:
-     *
-     * Support both:
-     *
-     * meta.projects
-     *
-     * and
-     *
-     * results
-     *
-     * This makes the script compatible
-     * with your current consolidated JSON.
+     * ----------------------------------------------------
+     * Get projects
+     * ----------------------------------------------------
      */
 
     let projects = [];
@@ -448,18 +289,25 @@ function main() {
         ) &&
         report.meta.projects.length > 0
     ) {
+
         projects =
             report.meta.projects.map(
                 project => ({
                     ...project,
+
                     name:
                         project.name ||
                         project.id,
                 })
             );
-    } else if (
-        Array.isArray(report.results)
+    }
+
+    else if (
+        Array.isArray(
+            report.results
+        )
     ) {
+
         projects =
             report.results.map(
                 project => ({
@@ -482,7 +330,9 @@ function main() {
     );
 
     /*
+     * ----------------------------------------------------
      * Overall statistics
+     * ----------------------------------------------------
      */
 
     const totalTests =
@@ -506,81 +356,121 @@ function main() {
             ).toFixed(2)
             : '0.00';
 
-    let overallStatus = 'PASSED';
-    let overallColor = 'Good';
+    let overallStatus =
+        'PASSED';
+
+    let overallColor =
+        'Good';
 
     if (totalFailed > 0) {
-        overallStatus = 'FAILED';
-        overallColor = 'Attention';
-    } else if (totalPending > 0) {
+
+        overallStatus =
+            'FAILED';
+
+        overallColor =
+            'Attention';
+    }
+
+    else if (totalPending > 0) {
+
         overallStatus =
             'PASSED WITH WARNINGS';
 
-        overallColor = 'Warning';
+        overallColor =
+            'Warning';
     }
 
     /*
-     * Build Adaptive Card body
+     * ----------------------------------------------------
+     * Adaptive Card body
+     * ----------------------------------------------------
      */
 
     const body = [
+
         {
             type: 'TextBlock',
+
             text:
                 'Consolidated E2E Test Report',
+
             weight: 'Bolder',
+
             size: 'Large',
         },
 
         {
             type: 'TextBlock',
+
             text:
                 `Overall Status: ${overallStatus}`,
+
             weight: 'Bolder',
+
             color: overallColor,
+
             spacing: 'Small',
         },
 
         {
             type: 'FactSet',
+
             facts: [
+
                 {
-                    title: 'Projects',
+                    title:
+                        'Projects',
+
                     value:
                         String(
                             projects.length
                         ),
                 },
+
                 {
-                    title: 'Total Tests',
+                    title:
+                        'Total Tests',
+
                     value:
                         String(
                             totalTests
                         ),
                 },
+
                 {
-                    title: 'Passed',
+                    title:
+                        'Passed',
+
                     value:
                         String(
                             totalPassed
                         ),
                 },
+
                 {
-                    title: 'Failed',
+                    title:
+                        'Failed',
+
                     value:
                         String(
                             totalFailed
                         ),
                 },
+
                 {
-                    title: 'Not Executed',
+                    title:
+                        'Not Executed',
+
                     value:
                         String(
                             totalPending
                         ),
                 },
+
                 {
-                    title: 'Pass Rate',
+                    title:
+                        'Pass Rate',
+
                     value:
                         `${passRate}%`,
                 },
@@ -589,31 +479,140 @@ function main() {
 
         {
             type: 'TextBlock',
-            text: 'Project Results',
+
+            text:
+                'Project Results',
+
             weight: 'Bolder',
+
             size: 'Medium',
+
             spacing: 'Medium',
+        },
+
+        /*
+         * Header
+         */
+
+        {
+            type: 'ColumnSet',
+
+            separator: true,
+
+            columns: [
+
+                {
+                    type: 'Column',
+                    width: 'stretch',
+
+                    items: [
+                        {
+                            type: 'TextBlock',
+                            text: 'Project',
+                            weight: 'Bolder',
+                            size: 'Small',
+                        },
+                    ],
+                },
+
+                {
+                    type: 'Column',
+                    width: 'auto',
+
+                    items: [
+                        {
+                            type: 'TextBlock',
+                            text: 'Tests',
+                            weight: 'Bolder',
+                            size: 'Small',
+                        },
+                    ],
+                },
+
+                {
+                    type: 'Column',
+                    width: 'auto',
+
+                    items: [
+                        {
+                            type: 'TextBlock',
+                            text: 'Pass',
+                            weight: 'Bolder',
+                            size: 'Small',
+                        },
+                    ],
+                },
+
+                {
+                    type: 'Column',
+                    width: 'auto',
+
+                    items: [
+                        {
+                            type: 'TextBlock',
+                            text: 'Fail',
+                            weight: 'Bolder',
+                            size: 'Small',
+                        },
+                    ],
+                },
+
+                {
+                    type: 'Column',
+                    width: 'auto',
+
+                    items: [
+                        {
+                            type: 'TextBlock',
+                            text: 'N/E',
+                            weight: 'Bolder',
+                            size: 'Small',
+                        },
+                    ],
+                },
+
+                {
+                    type: 'Column',
+                    width: 'auto',
+
+                    items: [
+                        {
+                            type: 'TextBlock',
+                            text: 'Pass %',
+                            weight: 'Bolder',
+                            size: 'Small',
+                        },
+                    ],
+                },
+            ],
         },
     ];
 
     /*
-     * Add every MFE project
+     * ----------------------------------------------------
+     * Add one compact row per MFE
+     * ----------------------------------------------------
      */
 
     for (const project of projects) {
+
         body.push(
-            createProjectContainer(
+            createProjectRow(
                 project
             )
         );
     }
 
     /*
-     * Generated timestamp
+     * ----------------------------------------------------
+     * Timestamp
+     * ----------------------------------------------------
      */
 
     body.push({
+
         type: 'TextBlock',
+
         text:
             `Generated: ${new Date().toLocaleString(
                 'en-GB',
@@ -622,48 +621,69 @@ function main() {
                         'Asia/Colombo',
                 }
             )}`,
+
         isSubtle: true,
+
         size: 'Small',
+
         spacing: 'Medium',
     });
 
     /*
-     * Artifact / GitHub Actions URL
-     *
-     * Passed from GitHub Actions as:
-     *
-     * REPORT_RUN_URL
+     * ----------------------------------------------------
+     * GitHub Actions button
+     * ----------------------------------------------------
      */
-
-    const runUrl =
-        process.env.REPORT_RUN_URL || '';
 
     const actions = [];
 
+    const runUrl =
+        process.env.REPORT_RUN_URL ||
+        '';
+
     if (runUrl) {
+
         actions.push({
-            type: 'Action.OpenUrl',
+
+            type:
+                'Action.OpenUrl',
+
             title:
                 'Download Artifacts / View Run',
-            url: runUrl,
+
+            url:
+                runUrl,
         });
     }
 
+    /*
+     * ----------------------------------------------------
+     * Final card
+     * ----------------------------------------------------
+     */
+
     const card = {
-        type: 'message',
+
+        type:
+            'message',
 
         attachments: [
+
             {
+
                 contentType:
                     'application/vnd.microsoft.card.adaptive',
 
                 content: {
+
                     '$schema':
                         'http://adaptivecards.io/schemas/adaptive-card.json',
 
-                    type: 'AdaptiveCard',
+                    type:
+                        'AdaptiveCard',
 
-                    version: '1.4',
+                    version:
+                        '1.4',
 
                     body,
 
@@ -674,7 +694,9 @@ function main() {
     };
 
     fs.writeFileSync(
+
         OUTPUT_FILE,
+
         JSON.stringify(
             card,
             null,
@@ -682,13 +704,33 @@ function main() {
         )
     );
 
+    /*
+     * ----------------------------------------------------
+     * Size check
+     * ----------------------------------------------------
+     */
+
+    const fileSize =
+        fs.statSync(
+            OUTPUT_FILE
+        ).size;
+
+    const fileSizeKB =
+        (
+            fileSize /
+            1024
+        ).toFixed(2);
+
     console.log('');
+
     console.log(
         '========================================'
     );
+
     console.log(
         'TEAMS CARD CREATED'
     );
+
     console.log(
         '========================================'
     );
@@ -722,12 +764,31 @@ function main() {
     );
 
     console.log(
-        `Run URL: ${runUrl || 'Not provided'}`
+        `Card size: ${fileSizeKB} KB`
+    );
+
+    console.log(
+        `Run URL: ${runUrl}`
     );
 
     console.log(
         `Output: ${OUTPUT_FILE}`
     );
+
+    /*
+     * Warning if approaching Teams limit
+     */
+
+    if (fileSize > 25 * 1024) {
+
+        console.warn(
+            `WARNING: Teams card is ${fileSizeKB} KB.`
+        );
+
+        console.warn(
+            'Keep the card below the 28 KB Teams limit.'
+        );
+    }
 }
 
 main();
