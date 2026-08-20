@@ -567,14 +567,14 @@ jobs:
             .github/scripts/template/consolidated-template.xlsm \
             consolidated-report/final
       
-      - name: Generate Teams Notification
-        id: generate-teams-card
-        env:
-          REPORT_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          node .github/scripts/generate-teams-card.js \
-            consolidated-report/consolidated.json \
-            teams-card.json
+      # - name: Generate Teams Notification
+      #   id: generate-teams-card
+      #   env:
+      #     REPORT_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      #   run: |
+      #     node .github/scripts/generate-teams-card.js \
+      #       consolidated-report/consolidated.json \
+      #       teams-card.json
 
       # ============================================================
       # 16. Show final report structure
@@ -601,27 +601,111 @@ jobs:
       #     path: consolidated-report/
       
 
+      - name: Generate Teams Notification
+        id: generate-teams-card
+        if: always()
+        env:
+          REPORT_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          echo "========================================"
+          echo "GENERATING TEAMS NOTIFICATION"
+          echo "========================================"
+
+          if [ ! -f consolidated-report/consolidated.json ]; then
+            echo "ERROR: consolidated.json not found"
+            exit 1
+          fi
+
+          node .github/scripts/generate-teams-card.js \
+            consolidated-report/consolidated.json \
+            teams-card.json
+
+          echo ""
+          echo "Teams card generated:"
+          ls -lh teams-card.json
+
+          echo ""
+          echo "Teams card validation:"
+          node -e "
+            const fs = require('fs');
+            const data = JSON.parse(fs.readFileSync('teams-card.json', 'utf8'));
+
+            console.log('Type:', data.type);
+            console.log('Attachments:', data.attachments?.length);
+            console.log(
+              'Card type:',
+              data.attachments?.[0]?.content?.type
+            );
+            console.log(
+              'Card version:',
+              data.attachments?.[0]?.content?.version
+            );
+          "
+
+
+      # ============================================================
+      # Send Notification to Teams
+      # ============================================================
+
+      - name: Send Notification to Teams
+        id: send-teams-notification
+        if: always() && steps.generate-teams-card.outcome == 'success'
+        continue-on-error: true
+        env:
+          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+        run: |
+          echo "========================================"
+          echo "SENDING CONSOLIDATED REPORT TO TEAMS"
+          echo "========================================"
+
+          if [ -z "$TEAMS_WEBHOOK_URL" ]; then
+            echo "ERROR: TEAMS_WEBHOOK_URL secret is empty or unavailable."
+            exit 1
+          fi
+
+          if [ ! -f teams-card.json ]; then
+            echo "ERROR: teams-card.json was not generated."
+            exit 1
+          fi
+
+          echo "Webhook is configured."
+          echo "Sending Teams Adaptive Card..."
+
+          HTTP_CODE=$(curl \
+            -sS \
+            -o teams-response.txt \
+            -w "%{http_code}" \
+            -H "Content-Type: application/json" \
+            --data-binary @teams-card.json \
+            "$TEAMS_WEBHOOK_URL")
+
+          echo ""
+          echo "Teams HTTP status: $HTTP_CODE"
+
+          echo ""
+          echo "Teams response:"
+          cat teams-response.txt || true
+
+          echo ""
+
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+            echo "Teams notification sent successfully."
+          else
+            echo "ERROR: Teams webhook returned HTTP $HTTP_CODE"
+            exit 1
+          fi
+
+
+      # ============================================================
+      # Upload ONE Final Artifact
+      # ============================================================
+
       - name: Upload Final Consolidated Reports
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: consolidated-final-reports
           path: |
             consolidated-report/
             teams-card.json
-
-      - name: Send Notification to Teams
-        continue-on-error: true
-        env:
-          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
-        run: |
-          echo "Sending consolidated E2E report to Microsoft Teams..."
-
-          if [ ! -f teams-card.json ]; then
-            echo "ERROR: teams-card.json was not generated"
-            exit 1
-          fi
-
-          curl -sS -v \
-            -H "Content-Type: application/json" \
-            -d @teams-card.json \
-            "$TEAMS_WEBHOOK_URL"
+          if-no-files-found: warn
