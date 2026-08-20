@@ -207,35 +207,121 @@ function collectSuites(
     parentModule = null
 ) {
     for (const suite of suites || []) {
+
         const suiteName =
             suite.title || 'Unnamed Suite';
 
-        /*
-         * Top-level suite becomes the module.
-         * Nested suite remains under that module.
-         */
-        const moduleName =
-            parentModule || suiteName;
+        const childSuites =
+            suite.suites || [];
+
+        const hasDirectTests =
+            Array.isArray(suite.tests) &&
+            suite.tests.length > 0;
 
         const stats =
             getSuiteStats(suite);
 
-        rows.push({
-            project: projectName,
-            module: moduleName,
-            suite: suiteName,
-            passed: stats.passed,
-            failed: stats.failed,
-            pending: stats.pending,
-            skipped: stats.skipped,
-        });
+        /*
+         * ------------------------------------------------------
+         * If this suite has no direct tests but has children,
+         * it is a wrapper/grouping suite.
+         *
+         * Process its children without adding a duplicate row.
+         * ------------------------------------------------------
+         */
 
-        if (suite.suites?.length) {
+        if (
+            !hasDirectTests &&
+            childSuites.length > 0
+        ) {
+
             collectSuites(
-                suite.suites,
+                childSuites,
                 projectName,
                 rows,
-                moduleName
+                parentModule || suiteName
+            );
+
+            continue;
+        }
+
+        /*
+         * ------------------------------------------------------
+         * Add actual test-bearing suite
+         * ------------------------------------------------------
+         */
+
+        const row = {
+
+            project:
+                projectName,
+
+            module:
+                parentModule || suiteName,
+
+            suite:
+                suiteName,
+
+            passed:
+                stats.passed,
+
+            failed:
+                stats.failed,
+
+            pending:
+                stats.pending,
+
+            skipped:
+                stats.skipped,
+        };
+
+        /*
+         * ------------------------------------------------------
+         * Prevent exact duplicate rows
+         *
+         * This protects against Mochawesome structures where
+         * parent and child suites have the same name/statistics.
+         * ------------------------------------------------------
+         */
+
+        const duplicate =
+            rows.some(existing =>
+
+                normalize(existing.project) ===
+                    normalize(row.project) &&
+
+                normalize(existing.module) ===
+                    normalize(row.module) &&
+
+                normalize(existing.suite) ===
+                    normalize(row.suite) &&
+
+                existing.passed === row.passed &&
+
+                existing.failed === row.failed &&
+
+                existing.pending === row.pending &&
+
+                existing.skipped === row.skipped
+            );
+
+        if (!duplicate) {
+            rows.push(row);
+        }
+
+        /*
+         * ------------------------------------------------------
+         * Process nested suites
+         * ------------------------------------------------------
+         */
+
+        if (childSuites.length > 0) {
+
+            collectSuites(
+                childSuites,
+                projectName,
+                rows,
+                parentModule || suiteName
             );
         }
     }
@@ -624,7 +710,7 @@ function writeExecutionSummary(
             }
         }
     }
-    
+
     console.log(
         `✓ Test_Execution_Summary updated: ${projectRows.length} projects`
     );
