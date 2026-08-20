@@ -589,3 +589,27 @@ jobs:
         with:
           name: consolidated-mochawesome-report
           path: consolidated-report/
+      
+      - name: Generate Teams Notification
+        id: generate-teams-card
+        run: |
+          node .github/scripts/generate-teams-card.js \
+            consolidated-report/consolidated.json \
+            teams-card.json
+
+      - name: Send Notification to Teams
+        continue-on-error: true
+        env:
+          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+        run: |
+          echo "Sending consolidated report notification to Microsoft Teams..."
+
+          if [ ! -f teams-card.json ]; then
+            echo "ERROR: teams-card.json was not generated"
+            exit 1
+          fi
+
+          curl -sS -v \
+            -H "Content-Type: application/json" \
+            -d @teams-card.json \
+            "$TEAMS_WEBHOOK_URL"
