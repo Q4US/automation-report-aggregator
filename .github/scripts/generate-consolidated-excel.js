@@ -568,431 +568,30 @@ function writeExecutionSummary(
     }
 
     /*
-     * --------------------------------------------------------
-     * Existing template structure:
-     *
-     * B5:E5
-     * Tests | Pass | Fail | Not Executed
-     *
-     * G5:J5
-     * Module | Pass | Fail | Not Executed
-     *
-     * We preserve the template and populate the data.
-     * --------------------------------------------------------
-     */
-
-    const headerRow = 5;
-
-    const testsCol = 2;       // B
-    const passCol = 3;        // C
-    const failCol = 4;        // D
-    const pendingCol = 5;     // E
-
-    const moduleCol = 7;      // G
-    const modulePassCol = 8;  // H
-    const moduleFailCol = 9;  // I
-    const modulePendingCol = 10; // J
-
-    /*
-     * --------------------------------------------------------
-     * Clear old dynamic project/module data.
-     * Keep the header and template title.
-     * --------------------------------------------------------
-     */
-
-    /*
-     * Left section
-     *
-     * Start at row 6.
-     *
-     * We need enough rows for all projects.
-     */
-    const projectStartRow = 6;
-
-    /*
-     * Find existing TOTAL row if present.
-     */
-    const usedRange =
-        sheet.usedRange();
-
-    let totalRow = null;
-
-    if (usedRange) {
-        const endRow =
-            usedRange.endCell()
-                .rowNumber();
-
-        for (
-            let row = projectStartRow;
-            row <= endRow;
-            row++
-        ) {
-            const value =
-                normalize(
-                    sheet
-                        .cell(row, testsCol)
-                        .value()
-                );
-
-            if (value === 'total') {
-                totalRow = row;
-                break;
-            }
-        }
-    }
-
-    /*
-     * If the template has a TOTAL row, clear rows
-     * between the project start and TOTAL.
-     */
-    if (totalRow) {
-        if (totalRow > projectStartRow) {
-            sheet
-                .range(
-                    projectStartRow,
-                    testsCol,
-                    totalRow - 1,
-                    pendingCol
-                )
-                .clear();
-        }
-    }
-
-    /*
-     * If there are more projects than the available rows,
-     * use rows above TOTAL and move TOTAL downward by
-     * inserting rows.
-     *
-     * This keeps the report dynamic when a new MFE is added.
-     */
-    const requiredProjectRows =
-        projectRows.length;
-
-    if (totalRow) {
-        const availableRows =
-            totalRow - projectStartRow;
-
-        const additionalRows =
-            requiredProjectRows -
-            availableRows;
-
-        if (additionalRows > 0) {
-            /*
-             * Insert rows before TOTAL.
-             *
-             * xlsx-populate supports inserting a range.
-             */
-            sheet
-                .range(
-                    totalRow,
-                    1,
-                    totalRow + additionalRows - 1,
-                    sheet.usedRange()
-                        .endCell()
-                        .columnNumber()
-                )
-                .insert('down');
-
-            totalRow += additionalRows;
-        }
-    } else {
-        totalRow =
-            projectStartRow +
-            requiredProjectRows;
-    }
-
-    /*
-     * --------------------------------------------------------
-     * Write project results
-     * --------------------------------------------------------
-     */
-
-    let row = projectStartRow;
-
-    for (const project of projectRows) {
-        sheet
-            .cell(row, testsCol)
-            .value(project.name);
-
-        sheet
-            .cell(row, passCol)
-            .value(project.stats.passed);
-
-        sheet
-            .cell(row, failCol)
-            .value(project.stats.failed);
-
-        sheet
-            .cell(row, pendingCol)
-            .value(
-                project.stats.pending +
-                project.stats.skipped
-            );
-
-        row++;
-    }
-
-    /*
-     * --------------------------------------------------------
-     * Overall total
-     * --------------------------------------------------------
-     */
-
-    const total = projectRows.reduce(
-        (result, project) => {
-            result.tests +=
-                project.stats.tests;
-
-            result.passed +=
-                project.stats.passed;
-
-            result.failed +=
-                project.stats.failed;
-
-            result.pending +=
-                project.stats.pending;
-
-            result.skipped +=
-                project.stats.skipped;
-
-            return result;
-        },
-        {
-            tests: 0,
-            passed: 0,
-            failed: 0,
-            pending: 0,
-            skipped: 0,
-        }
-    );
-
-    /*
-     * Put TOTAL after all projects.
-     */
-    sheet
-        .cell(totalRow, testsCol)
-        .value('Total');
-
-    sheet
-        .cell(totalRow, passCol)
-        .value(total.passed);
-
-    sheet
-        .cell(totalRow, failCol)
-        .value(total.failed);
-
-    sheet
-        .cell(totalRow, pendingCol)
-        .value(
-            total.pending +
-            total.skipped
-        );
-
-    /*
-     * Preserve total-row formatting.
-     */
-    sheet
-        .range(
-            totalRow,
-            testsCol,
-            totalRow,
-            pendingCol
-        )
-        .style({
-            bold: true,
-        });
-
-    /*
-     * --------------------------------------------------------
-     * Overall Results row
-     *
-     * Template contains:
-     *
-     * B9 = Overall Results
-     * C9 = Pass
-     * D9 = Fail
-     * E9 = Not Executed
-     *
-     * B10:E10 = values
-     * --------------------------------------------------------
-     */
-
-    let overallLabelRow = null;
-
-    const currentUsedRange =
-        sheet.usedRange();
-
-    if (currentUsedRange) {
-        const endRow =
-            currentUsedRange.endCell()
-                .rowNumber();
-
-        for (
-            let r = 1;
-            r <= endRow;
-            r++
-        ) {
-            if (
-                normalize(
-                    sheet
-                        .cell(r, testsCol)
-                        .value()
-                ) === 'overall results'
-            ) {
-                overallLabelRow = r;
-                break;
-            }
-        }
-    }
-
-    if (overallLabelRow) {
-        const valueRow =
-            overallLabelRow + 1;
-
-        sheet
-            .cell(valueRow, passCol)
-            .value(total.passed);
-
-        sheet
-            .cell(valueRow, failCol)
-            .value(total.failed);
-
-        sheet
-            .cell(valueRow, pendingCol)
-            .value(
-                total.pending +
-                total.skipped
-            );
-    }
-
-    /*
-     * --------------------------------------------------------
-     * Right-side project/module details
-     *
-     * The updated template has:
-     *
-     * G5 = Module
-     * H5 = Pass
-     * I5 = Fail
-     * J5 = Not Executed
-     *
-     * We populate it with project names.
-     *
-     * If the template already contains module rows,
-     * they will be replaced with the current project list.
-     * --------------------------------------------------------
-     */
-
-    const moduleStartRow = 6;
-
-    /*
-     * Clear existing right-side data.
-     */
-    const rightEndRow =
-        Math.max(
-            sheet.usedRange()
-                ? sheet.usedRange()
-                    .endCell()
-                    .rowNumber()
-                : moduleStartRow,
-            moduleStartRow +
-                projectRows.length
-        );
-
-    sheet
-        .range(
-            moduleStartRow,
-            moduleCol,
-            rightEndRow,
-            modulePendingCol
-        )
-        .clear();
-
-    row = moduleStartRow;
-
-    for (const project of projectRows) {
-        sheet
-            .cell(row, moduleCol)
-            .value(project.name);
-
-        sheet
-            .cell(row, modulePassCol)
-            .value(project.stats.passed);
-
-        sheet
-            .cell(row, moduleFailCol)
-            .value(project.stats.failed);
-
-        sheet
-            .cell(row, modulePendingCol)
-            .value(
-                project.stats.pending +
-                project.stats.skipped
-            );
-
-        row++;
-    }
-
-    /*
-     * Add right-side total.
-     */
-    sheet
-        .cell(row, moduleCol)
-        .value('Total');
-
-    sheet
-        .cell(row, modulePassCol)
-        .value(total.passed);
-
-    sheet
-        .cell(row, moduleFailCol)
-        .value(total.failed);
-
-    sheet
-        .cell(row, modulePendingCol)
-        .value(
-            total.pending +
-            total.skipped
-        );
-
-    sheet
-        .range(
-            row,
-            moduleCol,
-            row,
-            modulePendingCol
-        )
-        .style({
-            bold: true,
-        });
-
-    /*
-     * --------------------------------------------------------
-     * Release information
-     * --------------------------------------------------------
+     * ========================================================
+     * RELEASE DATE
+     * ========================================================
      */
 
     const generatedDate =
         new Date().toLocaleDateString(
             'en-GB',
             {
-                timeZone: 'Asia/Colombo',
+                timeZone:
+                    'Asia/Colombo',
             }
         );
 
-    /*
-     * Find "Release Date" and populate next cell.
-     */
-    const summaryUsedRange =
+    const summaryRange =
         sheet.usedRange();
 
-    if (summaryUsedRange) {
+    if (summaryRange) {
         const endRow =
-            summaryUsedRange.endCell()
+            summaryRange.endCell()
                 .rowNumber();
 
         const endCol =
-            summaryUsedRange.endCell()
+            summaryRange.endCell()
                 .columnNumber();
 
         for (
@@ -1013,7 +612,8 @@ function writeExecutionSummary(
                     );
 
                 if (
-                    value === 'release date'
+                    value ===
+                    'release date'
                 ) {
                     sheet
                         .cell(r, c + 1)
@@ -1024,7 +624,7 @@ function writeExecutionSummary(
             }
         }
     }
-
+    
     console.log(
         `✓ Test_Execution_Summary updated: ${projectRows.length} projects`
     );
