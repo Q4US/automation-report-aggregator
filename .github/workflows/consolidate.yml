@@ -566,15 +566,6 @@ jobs:
             consolidated-report/consolidated.json \
             .github/scripts/template/consolidated-template.xlsm \
             consolidated-report/final
-      
-      # - name: Generate Teams Notification
-      #   id: generate-teams-card
-      #   env:
-      #     REPORT_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-      #   run: |
-      #     node .github/scripts/generate-teams-card.js \
-      #       consolidated-report/consolidated.json \
-      #       teams-card.json
 
       # ============================================================
       # 16. Show final report structure
@@ -589,17 +580,9 @@ jobs:
           find consolidated-report \
             -type f \
             -print
-
       # ============================================================
-      # 17. Upload consolidated report
+      # 17. Generate Teams Notification
       # ============================================================
-
-      # - name: Upload consolidated report
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: consolidated-mochawesome-report
-      #     path: consolidated-report/
-      
 
       - name: Generate Teams Notification
         id: generate-teams-card
