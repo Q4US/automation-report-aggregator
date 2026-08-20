@@ -20,12 +20,13 @@ const CONFIG = {
 };
 
 const SHEETS = {
-    SUMMARY: 'Consolidated_Summary',
+    SUMMARY: 'Test_Execution_Summary',
     CONFIGURATIONS: 'Configurations',
-    DETAILS: 'Project_Details',
-    COVERAGE: 'Test_Coverage',
-    EXECUTION: 'Test_Execution_Summary',
 };
+
+/* ============================================================
+ * Utility functions
+ * ============================================================ */
 
 function normalize(value) {
     return String(value ?? '')
@@ -33,30 +34,30 @@ function normalize(value) {
         .toLowerCase();
 }
 
-function displayName(value) {
-    return String(value ?? '')
-        .replace(/[-_]+/g, ' ')
-        .replace(/\b\w/g, char =>
-            char.toUpperCase()
-        );
-}
-
-function getProjectIdFromResult(result) {
-    return normalize(
-        result?.title ||
-        result?.file ||
-        result?.fullFile
-    );
-}
-
 function getProjectName(result) {
     return (
         result?.title ||
+        result?.project ||
         result?.file ||
         result?.fullFile ||
         'Unknown Project'
     );
 }
+
+function getProjectId(result) {
+    return normalize(
+        result?.projectId ||
+        result?.id ||
+        result?.title ||
+        result?.project ||
+        result?.file ||
+        result?.fullFile
+    );
+}
+
+/* ============================================================
+ * Statistics
+ * ============================================================ */
 
 function emptyStats() {
     return {
@@ -67,30 +68,6 @@ function emptyStats() {
         pending: 0,
         skipped: 0,
     };
-}
-
-function addStats(target, stats) {
-    target.suites +=
-        Number(stats?.suites) || 0;
-
-    target.tests +=
-        Number(stats?.tests) || 0;
-
-    target.passed +=
-        Number(stats?.passes) ||
-        Number(stats?.passed) ||
-        0;
-
-    target.failed +=
-        Number(stats?.failures) ||
-        Number(stats?.failed) ||
-        0;
-
-    target.pending +=
-        Number(stats?.pending) || 0;
-
-    target.skipped +=
-        Number(stats?.skipped) || 0;
 }
 
 function getAllTests(suites) {
@@ -153,77 +130,38 @@ function getSuiteStats(suite) {
     return stats;
 }
 
-function collectSuites(
-    suites,
-    projectName,
-    rows,
-    parentSuite = null
-) {
-    for (const suite of suites || []) {
-        const currentSuiteName =
-            suite.title || 'Unnamed Suite';
-
-        const moduleName =
-            parentSuite ||
-            currentSuiteName;
-
-        const suiteName =
-            parentSuite
-                ? currentSuiteName
-                : currentSuiteName;
-
-        const stats =
-            getSuiteStats(suite);
-
-        rows.push({
-            project: projectName,
-            module: moduleName,
-            suite: suiteName,
-            passed: stats.passed,
-            failed: stats.failed,
-            pending: stats.pending,
-            skipped: stats.skipped,
-        });
-
-        if (suite.suites?.length) {
-            collectSuites(
-                suite.suites,
-                projectName,
-                rows,
-                moduleName
-            );
-        }
-    }
-}
-
 function getProjectStatistics(report) {
     const stats = emptyStats();
 
     stats.suites =
-        Number(report.stats?.suites) || 0;
+        Number(report?.stats?.suites) || 0;
 
     stats.tests =
-        Number(report.stats?.tests) || 0;
+        Number(report?.stats?.tests) || 0;
 
     stats.passed =
-        Number(report.stats?.passes) || 0;
+        Number(report?.stats?.passes) ||
+        Number(report?.stats?.passed) ||
+        0;
 
     stats.failed =
-        Number(report.stats?.failures) || 0;
+        Number(report?.stats?.failures) ||
+        Number(report?.stats?.failed) ||
+        0;
 
     stats.pending =
-        Number(report.stats?.pending) || 0;
+        Number(report?.stats?.pending) || 0;
 
     stats.skipped =
-        Number(report.stats?.skipped) || 0;
+        Number(report?.stats?.skipped) || 0;
 
     /*
-     * If Mochawesome stats are missing,
-     * calculate from the actual tests.
+     * If Mochawesome statistics are unavailable,
+     * calculate them from the actual tests.
      */
     if (
         stats.tests === 0 &&
-        report.results
+        Array.isArray(report?.results)
     ) {
         const tests = getAllTests(
             report.results.flatMap(
@@ -258,10 +196,119 @@ function getProjectStatistics(report) {
     return stats;
 }
 
-function getHeaderMap(sheet) {
+/* ============================================================
+ * Suite / configuration processing
+ * ============================================================ */
+
+function collectSuites(
+    suites,
+    projectName,
+    rows,
+    parentModule = null
+) {
+    for (const suite of suites || []) {
+        const suiteName =
+            suite.title || 'Unnamed Suite';
+
+        /*
+         * Top-level suite becomes the module.
+         * Nested suite remains under that module.
+         */
+        const moduleName =
+            parentModule || suiteName;
+
+        const stats =
+            getSuiteStats(suite);
+
+        rows.push({
+            project: projectName,
+            module: moduleName,
+            suite: suiteName,
+            passed: stats.passed,
+            failed: stats.failed,
+            pending: stats.pending,
+            skipped: stats.skipped,
+        });
+
+        if (suite.suites?.length) {
+            collectSuites(
+                suite.suites,
+                projectName,
+                rows,
+                moduleName
+            );
+        }
+    }
+}
+
+/* ============================================================
+ * Excel helpers
+ * ============================================================ */
+
+function getHeaderRow(
+    sheet,
+    requiredHeaders = []
+) {
+    if (!sheet) {
+        return null;
+    }
+
+    const usedRange = sheet.usedRange();
+
+    if (!usedRange) {
+        return null;
+    }
+
+    const startRow =
+        usedRange.startCell().rowNumber();
+
+    const endRow =
+        usedRange.endCell().rowNumber();
+
+    const endCol =
+        usedRange.endCell().columnNumber();
+
+    for (
+        let row = startRow;
+        row <= endRow;
+        row++
+    ) {
+        const values = [];
+
+        for (
+            let col = 1;
+            col <= endCol;
+            col++
+        ) {
+            values.push(
+                normalize(
+                    sheet.cell(row, col).value()
+                )
+            );
+        }
+
+        const matched =
+            requiredHeaders.every(header =>
+                values.includes(
+                    normalize(header)
+                )
+            );
+
+        if (matched) {
+            return row;
+        }
+    }
+
+    return null;
+}
+
+function getHeaderMap(
+    sheet,
+    headerRow
+) {
     const headers = {};
 
-    if (!sheet) {
+    if (!sheet || !headerRow) {
         return headers;
     }
 
@@ -270,9 +317,6 @@ function getHeaderMap(sheet) {
     if (!usedRange) {
         return headers;
     }
-
-    const startRow =
-        usedRange.startCell().rowNumber();
 
     const endCol =
         usedRange.endCell().columnNumber();
@@ -284,7 +328,7 @@ function getHeaderMap(sheet) {
     ) {
         const value =
             sheet
-                .cell(startRow, col)
+                .cell(headerRow, col)
                 .value();
 
         if (value) {
@@ -315,7 +359,7 @@ function findColumn(
 
 function clearDataRows(
     sheet,
-    startRow = 2
+    startRow
 ) {
     if (!sheet) {
         return;
@@ -346,61 +390,118 @@ function clearDataRows(
     }
 }
 
-function writeRowsToSheet(
+/* ============================================================
+ * Configurations
+ *
+ * This keeps the configuration functionality dynamic.
+ * No project names are hard-coded.
+ * ============================================================ */
+
+function writeConfigurations(
     sheet,
-    rows
+    configurationRows
 ) {
-    if (!sheet || rows.length === 0) {
-        return;
+    if (!sheet) {
+        throw new Error(
+            'Configurations sheet not found.'
+        );
+    }
+
+    const headerRow =
+        getHeaderRow(
+            sheet,
+            [
+                'Project',
+                'Module',
+                'Suite',
+            ]
+        );
+
+    if (!headerRow) {
+        throw new Error(
+            'Could not find Project / Module / Suite headers in Configurations sheet.'
+        );
     }
 
     const headers =
-        getHeaderMap(sheet);
+        getHeaderMap(
+            sheet,
+            headerRow
+        );
 
     const projectCol =
-        findColumn(headers, [
-            'Project',
-            'Project Name',
-        ]);
+        findColumn(
+            headers,
+            [
+                'Project',
+                'Project Name',
+            ]
+        );
 
     const moduleCol =
-        findColumn(headers, [
-            'Module',
-            'Module Name',
-        ]);
+        findColumn(
+            headers,
+            [
+                'Module',
+                'Module Name',
+            ]
+        );
 
     const suiteCol =
-        findColumn(headers, [
-            'Suite',
-            'Suite Name',
-        ]);
+        findColumn(
+            headers,
+            [
+                'Suite',
+                'Suite Name',
+            ]
+        );
 
     const passCol =
-        findColumn(headers, [
-            'Pass',
-            'Passed',
-        ]);
+        findColumn(
+            headers,
+            [
+                'Pass',
+                'Passed',
+            ]
+        );
 
     const failCol =
-        findColumn(headers, [
-            'Fail',
-            'Failed',
-        ]);
+        findColumn(
+            headers,
+            [
+                'Fail',
+                'Failed',
+            ]
+        );
 
-    const pendingCol =
-        findColumn(headers, [
-            'Not Executed',
-            'Pending',
-        ]);
+    const notExecutedCol =
+        findColumn(
+            headers,
+            [
+                'Not Executed',
+                'Pending',
+            ]
+        );
 
     const skippedCol =
-        findColumn(headers, [
-            'Skipped',
-        ]);
+        findColumn(
+            headers,
+            [
+                'Skipped',
+            ]
+        );
 
-    let rowNumber = 2;
+    const startRow =
+        headerRow + 1;
 
-    for (const row of rows) {
+    clearDataRows(
+        sheet,
+        startRow
+    );
+
+    let rowNumber = startRow;
+
+    for (const row of configurationRows) {
         if (projectCol) {
             sheet
                 .cell(rowNumber, projectCol)
@@ -431,9 +532,9 @@ function writeRowsToSheet(
                 .value(row.failed);
         }
 
-        if (pendingCol) {
+        if (notExecutedCol) {
             sheet
-                .cell(rowNumber, pendingCol)
+                .cell(rowNumber, notExecutedCol)
                 .value(row.pending);
         }
 
@@ -445,447 +546,493 @@ function writeRowsToSheet(
 
         rowNumber++;
     }
+
+    console.log(
+        `✓ Configurations updated: ${configurationRows.length} rows`
+    );
 }
 
-function writeSummarySheet(
+/* ============================================================
+ * Test Execution Summary
+ * ============================================================ */
+
+function writeExecutionSummary(
     sheet,
-    projectRows
+    projectRows,
+    consolidatedStats
 ) {
     if (!sheet) {
-        return;
+        throw new Error(
+            'Test_Execution_Summary sheet not found.'
+        );
     }
 
-    clearDataRows(sheet, 2);
+    /*
+     * --------------------------------------------------------
+     * Existing template structure:
+     *
+     * B5:E5
+     * Tests | Pass | Fail | Not Executed
+     *
+     * G5:J5
+     * Module | Pass | Fail | Not Executed
+     *
+     * We preserve the template and populate the data.
+     * --------------------------------------------------------
+     */
 
-    const headers =
-        getHeaderMap(sheet);
+    const headerRow = 5;
 
-    const projectCol =
-        findColumn(headers, [
-            'Project',
-            'Project Name',
-        ]);
+    const testsCol = 2;       // B
+    const passCol = 3;        // C
+    const failCol = 4;        // D
+    const pendingCol = 5;     // E
 
-    const suitesCol =
-        findColumn(headers, [
-            'Suites',
-            'Total Suites',
-        ]);
+    const moduleCol = 7;      // G
+    const modulePassCol = 8;  // H
+    const moduleFailCol = 9;  // I
+    const modulePendingCol = 10; // J
 
-    const testsCol =
-        findColumn(headers, [
-            'Tests',
-            'Total Tests',
-        ]);
+    /*
+     * --------------------------------------------------------
+     * Clear old dynamic project/module data.
+     * Keep the header and template title.
+     * --------------------------------------------------------
+     */
 
-    const passedCol =
-        findColumn(headers, [
-            'Pass',
-            'Passed',
-            'Passed Tests',
-        ]);
+    /*
+     * Left section
+     *
+     * Start at row 6.
+     *
+     * We need enough rows for all projects.
+     */
+    const projectStartRow = 6;
 
-    const failedCol =
-        findColumn(headers, [
-            'Fail',
-            'Failed',
-            'Failed Tests',
-        ]);
+    /*
+     * Find existing TOTAL row if present.
+     */
+    const usedRange =
+        sheet.usedRange();
 
-    const pendingCol =
-        findColumn(headers, [
-            'Pending',
-            'Not Executed',
-        ]);
+    let totalRow = null;
 
-    const skippedCol =
-        findColumn(headers, [
-            'Skipped',
-        ]);
+    if (usedRange) {
+        const endRow =
+            usedRange.endCell()
+                .rowNumber();
 
-    const passPercentCol =
-        findColumn(headers, [
-            'Pass %',
-            'Pass Percentage',
-            'Pass Rate',
-        ]);
+        for (
+            let row = projectStartRow;
+            row <= endRow;
+            row++
+        ) {
+            const value =
+                normalize(
+                    sheet
+                        .cell(row, testsCol)
+                        .value()
+                );
 
-    let row = 2;
+            if (value === 'total') {
+                totalRow = row;
+                break;
+            }
+        }
+    }
+
+    /*
+     * If the template has a TOTAL row, clear rows
+     * between the project start and TOTAL.
+     */
+    if (totalRow) {
+        if (totalRow > projectStartRow) {
+            sheet
+                .range(
+                    projectStartRow,
+                    testsCol,
+                    totalRow - 1,
+                    pendingCol
+                )
+                .clear();
+        }
+    }
+
+    /*
+     * If there are more projects than the available rows,
+     * use rows above TOTAL and move TOTAL downward by
+     * inserting rows.
+     *
+     * This keeps the report dynamic when a new MFE is added.
+     */
+    const requiredProjectRows =
+        projectRows.length;
+
+    if (totalRow) {
+        const availableRows =
+            totalRow - projectStartRow;
+
+        const additionalRows =
+            requiredProjectRows -
+            availableRows;
+
+        if (additionalRows > 0) {
+            /*
+             * Insert rows before TOTAL.
+             *
+             * xlsx-populate supports inserting a range.
+             */
+            sheet
+                .range(
+                    totalRow,
+                    1,
+                    totalRow + additionalRows - 1,
+                    sheet.usedRange()
+                        .endCell()
+                        .columnNumber()
+                )
+                .insert('down');
+
+            totalRow += additionalRows;
+        }
+    } else {
+        totalRow =
+            projectStartRow +
+            requiredProjectRows;
+    }
+
+    /*
+     * --------------------------------------------------------
+     * Write project results
+     * --------------------------------------------------------
+     */
+
+    let row = projectStartRow;
 
     for (const project of projectRows) {
-        if (projectCol) {
-            sheet
-                .cell(row, projectCol)
-                .value(project.name);
-        }
+        sheet
+            .cell(row, testsCol)
+            .value(project.name);
 
-        if (suitesCol) {
-            sheet
-                .cell(row, suitesCol)
-                .value(project.stats.suites);
-        }
+        sheet
+            .cell(row, passCol)
+            .value(project.stats.passed);
 
-        if (testsCol) {
-            sheet
-                .cell(row, testsCol)
-                .value(project.stats.tests);
-        }
+        sheet
+            .cell(row, failCol)
+            .value(project.stats.failed);
 
-        if (passedCol) {
-            sheet
-                .cell(row, passedCol)
-                .value(project.stats.passed);
-        }
-
-        if (failedCol) {
-            sheet
-                .cell(row, failedCol)
-                .value(project.stats.failed);
-        }
-
-        if (pendingCol) {
-            sheet
-                .cell(row, pendingCol)
-                .value(project.stats.pending);
-        }
-
-        if (skippedCol) {
-            sheet
-                .cell(row, skippedCol)
-                .value(project.stats.skipped);
-        }
-
-        if (passPercentCol) {
-            const percent =
-                project.stats.tests > 0
-                    ? project.stats.passed /
-                      project.stats.tests
-                    : 0;
-
-            sheet
-                .cell(row, passPercentCol)
-                .value(percent);
-
-            sheet
-                .cell(row, passPercentCol)
-                .style({
-                    numberFormat: '0.00%',
-                });
-        }
+        sheet
+            .cell(row, pendingCol)
+            .value(
+                project.stats.pending +
+                project.stats.skipped
+            );
 
         row++;
     }
 
     /*
-     * Overall row
+     * --------------------------------------------------------
+     * Overall total
+     * --------------------------------------------------------
      */
-    const overall =
-        projectRows.reduce(
-            (result, project) => {
-                result.suites +=
-                    project.stats.suites;
 
-                result.tests +=
-                    project.stats.tests;
+    const total = projectRows.reduce(
+        (result, project) => {
+            result.tests +=
+                project.stats.tests;
 
-                result.passed +=
-                    project.stats.passed;
+            result.passed +=
+                project.stats.passed;
 
-                result.failed +=
-                    project.stats.failed;
+            result.failed +=
+                project.stats.failed;
 
-                result.pending +=
-                    project.stats.pending;
+            result.pending +=
+                project.stats.pending;
 
-                result.skipped +=
-                    project.stats.skipped;
+            result.skipped +=
+                project.stats.skipped;
 
-                return result;
-            },
-            emptyStats()
-        );
+            return result;
+        },
+        {
+            tests: 0,
+            passed: 0,
+            failed: 0,
+            pending: 0,
+            skipped: 0,
+        }
+    );
 
-    if (projectCol) {
-        sheet
-            .cell(row, projectCol)
-            .value('TOTAL');
-    }
-
-    if (suitesCol) {
-        sheet
-            .cell(row, suitesCol)
-            .value(overall.suites);
-    }
-
-    if (testsCol) {
-        sheet
-            .cell(row, testsCol)
-            .value(overall.tests);
-    }
-
-    if (passedCol) {
-        sheet
-            .cell(row, passedCol)
-            .value(overall.passed);
-    }
-
-    if (failedCol) {
-        sheet
-            .cell(row, failedCol)
-            .value(overall.failed);
-    }
-
-    if (pendingCol) {
-        sheet
-            .cell(row, pendingCol)
-            .value(overall.pending);
-    }
-
-    if (skippedCol) {
-        sheet
-            .cell(row, skippedCol)
-            .value(overall.skipped);
-    }
-
-    if (passPercentCol) {
-        const percent =
-            overall.tests > 0
-                ? overall.passed /
-                  overall.tests
-                : 0;
-
-        sheet
-            .cell(row, passPercentCol)
-            .value(percent);
-
-        sheet
-            .cell(row, passPercentCol)
-            .style({
-                numberFormat: '0.00%',
-            });
-    }
+    /*
+     * Put TOTAL after all projects.
+     */
+    sheet
+        .cell(totalRow, testsCol)
+        .value('Total');
 
     sheet
+        .cell(totalRow, passCol)
+        .value(total.passed);
+
+    sheet
+        .cell(totalRow, failCol)
+        .value(total.failed);
+
+    sheet
+        .cell(totalRow, pendingCol)
+        .value(
+            total.pending +
+            total.skipped
+        );
+
+    /*
+     * Preserve total-row formatting.
+     */
+    sheet
         .range(
-            row,
-            1,
-            row,
-            Math.max(
-                Object.values(headers).length,
-                1
-            )
+            totalRow,
+            testsCol,
+            totalRow,
+            pendingCol
         )
         .style({
             bold: true,
         });
-}
-
-function writeExecutionSummary(
-    sheet,
-    consolidated
-) {
-    if (!sheet) {
-        return;
-    }
-
-    const headers =
-        getHeaderMap(sheet);
 
     /*
-     * Try to populate a table if the
-     * sheet has Project / Tests columns.
+     * --------------------------------------------------------
+     * Overall Results row
+     *
+     * Template contains:
+     *
+     * B9 = Overall Results
+     * C9 = Pass
+     * D9 = Fail
+     * E9 = Not Executed
+     *
+     * B10:E10 = values
+     * --------------------------------------------------------
      */
-    const projectCol =
-        findColumn(headers, [
-            'Project',
-            'Project Name',
-        ]);
 
-    const testsCol =
-        findColumn(headers, [
-            'Tests',
-            'Total Tests',
-        ]);
+    let overallLabelRow = null;
 
-    const passCol =
-        findColumn(headers, [
-            'Pass',
-            'Passed',
-        ]);
-
-    const failCol =
-        findColumn(headers, [
-            'Fail',
-            'Failed',
-        ]);
-
-    const pendingCol =
-        findColumn(headers, [
-            'Pending',
-            'Not Executed',
-        ]);
-
-    if (
-        projectCol &&
-        testsCol
-    ) {
-        clearDataRows(sheet, 2);
-
-        let row = 2;
-
-        for (
-            const project of
-            consolidated.meta.projects
-        ) {
-            if (projectCol) {
-                sheet
-                    .cell(row, projectCol)
-                    .value(project.name);
-            }
-
-            if (testsCol) {
-                sheet
-                    .cell(row, testsCol)
-                    .value(
-                        project.stats.tests
-                    );
-            }
-
-            if (passCol) {
-                sheet
-                    .cell(row, passCol)
-                    .value(
-                        project.stats.passed
-                    );
-            }
-
-            if (failCol) {
-                sheet
-                    .cell(row, failCol)
-                    .value(
-                        project.stats.failed
-                    );
-            }
-
-            if (pendingCol) {
-                sheet
-                    .cell(row, pendingCol)
-                    .value(
-                        project.stats.pending
-                    );
-            }
-
-            row++;
-        }
-    }
-
-    /*
-     * Also update common summary cells
-     * if the template contains labels.
-     */
-    const usedRange =
+    const currentUsedRange =
         sheet.usedRange();
 
-    if (!usedRange) {
-        return;
-    }
+    if (currentUsedRange) {
+        const endRow =
+            currentUsedRange.endCell()
+                .rowNumber();
 
-    const endRow =
-        usedRange.endCell().rowNumber();
-
-    const endCol =
-        usedRange.endCell().columnNumber();
-
-    for (
-        let row = 1;
-        row <= endRow;
-        row++
-    ) {
         for (
-            let col = 1;
-            col <= endCol;
-            col++
+            let r = 1;
+            r <= endRow;
+            r++
         ) {
-            const value =
-                sheet
-                    .cell(row, col)
-                    .value();
-
-            if (!value) {
-                continue;
-            }
-
-            const label =
-                normalize(value);
-
-            const target =
-                sheet.cell(row, col + 1);
-
             if (
-                label === 'total projects'
+                normalize(
+                    sheet
+                        .cell(r, testsCol)
+                        .value()
+                ) === 'overall results'
             ) {
-                target.value(
-                    consolidated.meta
-                        .projectCount
-                );
-            }
-
-            if (
-                label === 'total tests'
-            ) {
-                target.value(
-                    consolidated.stats.tests
-                );
-            }
-
-            if (
-                label === 'passed'
-            ) {
-                target.value(
-                    consolidated.stats.passes
-                );
-            }
-
-            if (
-                label === 'failed'
-            ) {
-                target.value(
-                    consolidated.stats.failures
-                );
-            }
-
-            if (
-                label === 'pending' ||
-                label === 'not executed'
-            ) {
-                target.value(
-                    consolidated.stats.pending
-                );
-            }
-
-            if (
-                label === 'pass %' ||
-                label === 'pass percentage'
-            ) {
-                const percent =
-                    consolidated.stats
-                        .tests > 0
-                        ? consolidated.stats
-                              .passes /
-                          consolidated.stats
-                              .tests
-                        : 0;
-
-                target
-                    .value(percent)
-                    .style({
-                        numberFormat:
-                            '0.00%',
-                    });
+                overallLabelRow = r;
+                break;
             }
         }
     }
+
+    if (overallLabelRow) {
+        const valueRow =
+            overallLabelRow + 1;
+
+        sheet
+            .cell(valueRow, passCol)
+            .value(total.passed);
+
+        sheet
+            .cell(valueRow, failCol)
+            .value(total.failed);
+
+        sheet
+            .cell(valueRow, pendingCol)
+            .value(
+                total.pending +
+                total.skipped
+            );
+    }
+
+    /*
+     * --------------------------------------------------------
+     * Right-side project/module details
+     *
+     * The updated template has:
+     *
+     * G5 = Module
+     * H5 = Pass
+     * I5 = Fail
+     * J5 = Not Executed
+     *
+     * We populate it with project names.
+     *
+     * If the template already contains module rows,
+     * they will be replaced with the current project list.
+     * --------------------------------------------------------
+     */
+
+    const moduleStartRow = 6;
+
+    /*
+     * Clear existing right-side data.
+     */
+    const rightEndRow =
+        Math.max(
+            sheet.usedRange()
+                ? sheet.usedRange()
+                    .endCell()
+                    .rowNumber()
+                : moduleStartRow,
+            moduleStartRow +
+                projectRows.length
+        );
+
+    sheet
+        .range(
+            moduleStartRow,
+            moduleCol,
+            rightEndRow,
+            modulePendingCol
+        )
+        .clear();
+
+    row = moduleStartRow;
+
+    for (const project of projectRows) {
+        sheet
+            .cell(row, moduleCol)
+            .value(project.name);
+
+        sheet
+            .cell(row, modulePassCol)
+            .value(project.stats.passed);
+
+        sheet
+            .cell(row, moduleFailCol)
+            .value(project.stats.failed);
+
+        sheet
+            .cell(row, modulePendingCol)
+            .value(
+                project.stats.pending +
+                project.stats.skipped
+            );
+
+        row++;
+    }
+
+    /*
+     * Add right-side total.
+     */
+    sheet
+        .cell(row, moduleCol)
+        .value('Total');
+
+    sheet
+        .cell(row, modulePassCol)
+        .value(total.passed);
+
+    sheet
+        .cell(row, moduleFailCol)
+        .value(total.failed);
+
+    sheet
+        .cell(row, modulePendingCol)
+        .value(
+            total.pending +
+            total.skipped
+        );
+
+    sheet
+        .range(
+            row,
+            moduleCol,
+            row,
+            modulePendingCol
+        )
+        .style({
+            bold: true,
+        });
+
+    /*
+     * --------------------------------------------------------
+     * Release information
+     * --------------------------------------------------------
+     */
+
+    const generatedDate =
+        new Date().toLocaleDateString(
+            'en-GB',
+            {
+                timeZone: 'Asia/Colombo',
+            }
+        );
+
+    /*
+     * Find "Release Date" and populate next cell.
+     */
+    const summaryUsedRange =
+        sheet.usedRange();
+
+    if (summaryUsedRange) {
+        const endRow =
+            summaryUsedRange.endCell()
+                .rowNumber();
+
+        const endCol =
+            summaryUsedRange.endCell()
+                .columnNumber();
+
+        for (
+            let r = 1;
+            r <= endRow;
+            r++
+        ) {
+            for (
+                let c = 1;
+                c <= endCol;
+                c++
+            ) {
+                const value =
+                    normalize(
+                        sheet
+                            .cell(r, c)
+                            .value()
+                    );
+
+                if (
+                    value === 'release date'
+                ) {
+                    sheet
+                        .cell(r, c + 1)
+                        .value(
+                            generatedDate
+                        );
+                }
+            }
+        }
+    }
+
+    console.log(
+        `✓ Test_Execution_Summary updated: ${projectRows.length} projects`
+    );
 }
+
+/* ============================================================
+ * Save workbook
+ * ============================================================ */
 
 async function saveWorkbook(workbook) {
     await fs.mkdir(
@@ -908,6 +1055,10 @@ async function saveWorkbook(workbook) {
     return outputPath;
 }
 
+/* ============================================================
+ * MAIN
+ * ============================================================ */
+
 async function main() {
     console.log(
         '========================================'
@@ -922,9 +1073,9 @@ async function main() {
     );
 
     /*
-     * ----------------------------------------------------
+     * --------------------------------------------------------
      * Read consolidated JSON
-     * ----------------------------------------------------
+     * --------------------------------------------------------
      */
 
     const content =
@@ -937,7 +1088,6 @@ async function main() {
         JSON.parse(content);
 
     if (
-        !consolidated.results ||
         !Array.isArray(
             consolidated.results
         )
@@ -948,10 +1098,14 @@ async function main() {
     }
 
     /*
-     * ----------------------------------------------------
+     * --------------------------------------------------------
      * Load Excel template
-     * ----------------------------------------------------
+     * --------------------------------------------------------
      */
+
+    console.log(
+        `Template: ${CONFIG.templatePath}`
+    );
 
     const workbook =
         await XlsxPopulate.fromFileAsync(
@@ -959,152 +1113,145 @@ async function main() {
         );
 
     /*
-     * ----------------------------------------------------
-     * Build dynamic project list
-     * ----------------------------------------------------
+     * --------------------------------------------------------
+     * Build project list dynamically
+     *
+     * New MFEs automatically appear here.
+     * No project names are hard-coded.
+     * --------------------------------------------------------
      */
 
     const projectRows = [];
 
     for (
-        const result
-        of consolidated.results
+        const result of
+        consolidated.results
     ) {
         const name =
             getProjectName(result);
 
-        const projectStats =
-            getProjectStatistics({
-                stats:
-                    consolidated.meta
-                        ?.projects
-                        ?.find(
-                            p =>
-                                normalize(
-                                    p.name
-                                ) ===
-                                normalize(
-                                    name
-                                )
-                        )
-                        ?.stats,
-
-                results: [
-                    {
-                        suites:
-                            result.suites,
-                    },
-                ],
-            });
+        const id =
+            getProjectId(result);
 
         /*
-         * Prefer the statistics stored in
-         * consolidated.meta.projects.
+         * First preference:
+         * consolidated.meta.projects
          */
         const metaProject =
             consolidated.meta
                 ?.projects
-                ?.find(
-                    p =>
-                        normalize(
-                            p.name
-                        ) ===
-                        normalize(name)
+                ?.find(project =>
+                    normalize(
+                        project.id
+                    ) === normalize(id)
+                ) ||
+            consolidated.meta
+                ?.projects
+                ?.find(project =>
+                    normalize(
+                        project.name
+                    ) === normalize(name)
                 );
 
+        let stats;
+
         if (metaProject?.stats) {
-            projectRows.push({
-                id:
-                    metaProject.id ||
-                    normalize(name),
+            stats = {
+                suites:
+                    Number(
+                        metaProject.stats.suites
+                    ) || 0,
 
-                name,
+                tests:
+                    Number(
+                        metaProject.stats.tests
+                    ) || 0,
 
-                stats: {
-                    suites:
-                        Number(
-                            metaProject
-                                .stats
-                                .suites
-                        ) || 0,
+                passed:
+                    Number(
+                        metaProject.stats.passed
+                    ) || 0,
 
-                    tests:
-                        Number(
-                            metaProject
-                                .stats
-                                .tests
-                        ) || 0,
+                failed:
+                    Number(
+                        metaProject.stats.failed
+                    ) || 0,
 
-                    passed:
-                        Number(
-                            metaProject
-                                .stats
-                                .passed
-                        ) || 0,
+                pending:
+                    Number(
+                        metaProject.stats.pending
+                    ) || 0,
 
-                    failed:
-                        Number(
-                            metaProject
-                                .stats
-                                .failed
-                        ) || 0,
-
-                    pending:
-                        Number(
-                            metaProject
-                                .stats
-                                .pending
-                        ) || 0,
-
-                    skipped:
-                        Number(
-                            metaProject
-                                .stats
-                                .skipped
-                        ) || 0,
-                },
-
-                result,
-            });
+                skipped:
+                    Number(
+                        metaProject.stats.skipped
+                    ) || 0,
+            };
         } else {
-            projectRows.push({
-                id: normalize(name),
+            /*
+             * Fallback:
+             * calculate directly from result.
+             */
+            stats =
+                getProjectStatistics({
+                    stats:
+                        result.stats,
 
-                name,
-
-                stats: projectStats,
-
-                result,
-            });
+                    results: [
+                        {
+                            suites:
+                                result.suites ||
+                                [],
+                        },
+                    ],
+                });
         }
+
+        projectRows.push({
+            id,
+            name,
+            stats,
+            result,
+        });
+    }
+
+    console.log('');
+    console.log(
+        `Projects found: ${projectRows.length}`
+    );
+
+    for (const project of projectRows) {
+        console.log(
+            `  ${project.name}: ` +
+            `${project.stats.tests} tests, ` +
+            `${project.stats.passed} passed, ` +
+            `${project.stats.failed} failed, ` +
+            `${project.stats.pending} pending`
+        );
     }
 
     /*
-     * ----------------------------------------------------
+     * --------------------------------------------------------
      * Create Configuration rows
-     * ----------------------------------------------------
+     * --------------------------------------------------------
      */
 
     const configurationRows = [];
 
     for (
-        const project
-        of projectRows
+        const project of projectRows
     ) {
-        const suites =
-            project.result.suites || [];
-
         collectSuites(
-            suites,
+            project.result.suites || [],
             project.name,
             configurationRows
         );
     }
 
     /*
-     * ----------------------------------------------------
-     * Fill Consolidated Summary
-     * ----------------------------------------------------
+     * --------------------------------------------------------
+     * Update Test Execution Summary
+     * --------------------------------------------------------
      */
 
     const summarySheet =
@@ -1112,25 +1259,22 @@ async function main() {
             SHEETS.SUMMARY
         );
 
-    if (summarySheet) {
-        writeSummarySheet(
-            summarySheet,
-            projectRows
-        );
-
-        console.log(
-            '✓ Consolidated_Summary updated'
-        );
-    } else {
-        console.warn(
-            `WARNING: Sheet "${SHEETS.SUMMARY}" not found.`
+    if (!summarySheet) {
+        throw new Error(
+            `Sheet "${SHEETS.SUMMARY}" not found in template.`
         );
     }
 
+    writeExecutionSummary(
+        summarySheet,
+        projectRows,
+        consolidated.stats
+    );
+
     /*
-     * ----------------------------------------------------
-     * Fill Configurations
-     * ----------------------------------------------------
+     * --------------------------------------------------------
+     * Update Configurations
+     * --------------------------------------------------------
      */
 
     const configurationSheet =
@@ -1138,255 +1282,21 @@ async function main() {
             SHEETS.CONFIGURATIONS
         );
 
-    if (configurationSheet) {
-        clearDataRows(
-            configurationSheet,
-            2
-        );
-
-        writeRowsToSheet(
-            configurationSheet,
-            configurationRows
-        );
-
-        console.log(
-            '✓ Configurations updated'
-        );
-    } else {
-        console.warn(
-            `WARNING: Sheet "${SHEETS.CONFIGURATIONS}" not found.`
+    if (!configurationSheet) {
+        throw new Error(
+            `Sheet "${SHEETS.CONFIGURATIONS}" not found in template.`
         );
     }
 
-    /*
-     * ----------------------------------------------------
-     * Fill Project Details
-     * ----------------------------------------------------
-     */
-
-    const detailsSheet =
-        workbook.sheet(
-            SHEETS.DETAILS
-        );
-
-    if (detailsSheet) {
-        clearDataRows(
-            detailsSheet,
-            2
-        );
-
-        const detailsRows =
-            projectRows.map(
-                project => ({
-                    project:
-                        project.name,
-
-                    module: '',
-
-                    suite:
-                        `${project.stats.suites} Suites`,
-
-                    passed:
-                        project.stats.passed,
-
-                    failed:
-                        project.stats.failed,
-
-                    pending:
-                        project.stats.pending,
-
-                    skipped:
-                        project.stats.skipped,
-                })
-            );
-
-        writeRowsToSheet(
-            detailsSheet,
-            detailsRows
-        );
-
-        console.log(
-            '✓ Project_Details updated'
-        );
-    }
+    writeConfigurations(
+        configurationSheet,
+        configurationRows
+    );
 
     /*
-     * ----------------------------------------------------
-     * Fill Test Coverage
-     * ----------------------------------------------------
-     */
-
-    const coverageSheet =
-        workbook.sheet(
-            SHEETS.COVERAGE
-        );
-
-    if (coverageSheet) {
-        clearDataRows(
-            coverageSheet,
-            2
-        );
-
-        const coverageRows =
-            projectRows.map(
-                project => {
-                    const tests =
-                        project.stats.tests;
-
-                    const passed =
-                        project.stats.passed;
-
-                    return {
-                        project:
-                            project.name,
-
-                        module: '',
-
-                        suite:
-                            'Overall',
-
-                        passed,
-
-                        failed:
-                            project.stats
-                                .failed,
-
-                        pending:
-                            project.stats
-                                .pending,
-
-                        skipped:
-                            project.stats
-                                .skipped,
-
-                        coverage:
-                            tests > 0
-                                ? passed /
-                                  tests
-                                : 0,
-                    };
-                }
-            );
-
-        writeRowsToSheet(
-            coverageSheet,
-            coverageRows
-        );
-
-        console.log(
-            '✓ Test_Coverage updated'
-        );
-    }
-
-    /*
-     * ----------------------------------------------------
-     * Fill Test Execution Summary
-     * ----------------------------------------------------
-     */
-
-    const executionSheet =
-        workbook.sheet(
-            SHEETS.EXECUTION
-        );
-
-    if (executionSheet) {
-        writeExecutionSummary(
-            executionSheet,
-            consolidated
-        );
-
-        console.log(
-            '✓ Test_Execution_Summary updated'
-        );
-    }
-
-    /*
-     * ----------------------------------------------------
-     * Add report metadata
-     * ----------------------------------------------------
-     */
-
-    const generatedDate =
-        new Date().toLocaleString(
-            'en-GB',
-            {
-                timeZone:
-                    'Asia/Colombo',
-            }
-        );
-
-    for (
-        const sheetName of [
-            SHEETS.SUMMARY,
-            SHEETS.DETAILS,
-            SHEETS.COVERAGE,
-            SHEETS.EXECUTION,
-        ]
-    ) {
-        const sheet =
-            workbook.sheet(
-                sheetName
-            );
-
-        if (!sheet) {
-            continue;
-        }
-
-        const usedRange =
-            sheet.usedRange();
-
-        if (!usedRange) {
-            continue;
-        }
-
-        const endRow =
-            usedRange.endCell()
-                .rowNumber();
-
-        const endCol =
-            usedRange.endCell()
-                .columnNumber();
-
-        /*
-         * Search for "Generated Date"
-         * label and populate next cell.
-         */
-        for (
-            let row = 1;
-            row <= endRow;
-            row++
-        ) {
-            for (
-                let col = 1;
-                col <= endCol;
-                col++
-            ) {
-                const value =
-                    sheet
-                        .cell(row, col)
-                        .value();
-
-                if (
-                    normalize(value) ===
-                    'generated date'
-                ) {
-                    sheet
-                        .cell(
-                            row,
-                            col + 1
-                        )
-                        .value(
-                            generatedDate
-                        );
-                }
-            }
-        }
-    }
-
-    /*
-     * ----------------------------------------------------
+     * --------------------------------------------------------
      * Save
-     * ----------------------------------------------------
+     * --------------------------------------------------------
      */
 
     const outputPath =
@@ -1395,6 +1305,7 @@ async function main() {
         );
 
     console.log('');
+
     console.log(
         '========================================'
     );
@@ -1437,6 +1348,8 @@ main().catch(error => {
     console.error(
         'ERROR generating consolidated Excel:'
     );
+
     console.error(error);
+
     process.exit(1);
 });
