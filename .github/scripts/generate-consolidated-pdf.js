@@ -41,11 +41,11 @@ function emptyStats() {
 }
 
 function addStats(target, source) {
-    target.total += source.total || 0;
-    target.passed += source.passed || 0;
-    target.failed += source.failed || 0;
-    target.skipped += source.skipped || 0;
-    target.pending += source.pending || 0;
+    target.total += source?.total || 0;
+    target.passed += source?.passed || 0;
+    target.failed += source?.failed || 0;
+    target.skipped += source?.skipped || 0;
+    target.pending += source?.pending || 0;
 
     return target;
 }
@@ -121,6 +121,9 @@ function getSuiteStats(suite) {
         }
     }
 
+    /*
+     * Include nested suites.
+     */
     for (const child of suite?.suites || []) {
         addStats(
             stats,
@@ -142,8 +145,8 @@ function getProjectStats(project) {
     }
 
     /*
-     * Fallback to project-level stats if there
-     * are no suites available.
+     * Fallback to project-level stats if no suites
+     * are available.
      */
     if (
         stats.total === 0 &&
@@ -218,6 +221,12 @@ function formatTestTitle(title) {
     };
 }
 
+/*
+ * -------------------------------------------------------------
+ * Collect failed / skipped / pending tests
+ * -------------------------------------------------------------
+ */
+
 function collectIssues(
     suite,
     projectName,
@@ -236,12 +245,18 @@ function collectIssues(
 
             output.push({
                 project: projectName,
-                suite: cleanSuiteTitle(
-                    suite.title
-                ),
+
+                suite:
+                    cleanSuiteTitle(
+                        suite.title
+                    ),
+
                 state,
+
                 id: parsed.id,
-                description: parsed.description,
+
+                description:
+                    parsed.description,
             });
         }
     }
@@ -255,101 +270,271 @@ function collectIssues(
     }
 }
 
-function suiteRows(
+/*
+ * -------------------------------------------------------------
+ * Generate one project test row
+ * -------------------------------------------------------------
+ */
+
+function createSuiteRow(
+    moduleName,
+    suiteName,
+    stats,
+    indent = false
+) {
+    const hasIssues =
+        stats.failed > 0 ||
+        stats.skipped > 0 ||
+        stats.pending > 0;
+
+    const background =
+        hasIssues
+            ? '#fff4f4'
+            : '#ffffff';
+
+    const suitePadding =
+        indent ? '18px' : '8px';
+
+    return `
+        <tr
+            style="
+                background:${background};
+                page-break-inside:avoid;
+                break-inside:avoid;
+            "
+        >
+
+            <!-- Module -->
+            <td
+                style="
+                    padding:7px 8px;
+                    vertical-align:top;
+                    font-weight:500;
+                    word-wrap:break-word;
+                    overflow-wrap:break-word;
+                "
+            >
+                ${escapeHtml(moduleName)}
+            </td>
+
+            <!-- Suite -->
+            <td
+                style="
+                    padding:7px ${suitePadding}px;
+                    vertical-align:top;
+                    word-wrap:break-word;
+                    overflow-wrap:break-word;
+                "
+            >
+                ${escapeHtml(suiteName)}
+            </td>
+
+            <!-- Total -->
+            <td
+                style="
+                    padding:7px 8px;
+                    text-align:center;
+                    vertical-align:top;
+                "
+            >
+                ${stats.total}
+            </td>
+
+            <!-- Passed -->
+            <td
+                style="
+                    padding:7px 8px;
+                    text-align:center;
+                    vertical-align:top;
+                    color:${COLORS.Passed};
+                "
+            >
+                ${stats.passed}
+            </td>
+
+            <!-- Failed -->
+            <td
+                style="
+                    padding:7px 8px;
+                    text-align:center;
+                    vertical-align:top;
+                    color:${COLORS.Failed};
+                "
+            >
+                ${stats.failed}
+            </td>
+
+            <!-- Skipped -->
+            <td
+                style="
+                    padding:7px 8px;
+                    text-align:center;
+                    vertical-align:top;
+                    color:${COLORS.Skipped};
+                "
+            >
+                ${stats.skipped}
+            </td>
+
+            <!-- Pending -->
+            <td
+                style="
+                    padding:7px 8px;
+                    text-align:center;
+                    vertical-align:top;
+                    color:${COLORS.Pending};
+                "
+            >
+                ${stats.pending}
+            </td>
+
+        </tr>
+    `;
+}
+
+/*
+ * -------------------------------------------------------------
+ * Render nested suites
+ * -------------------------------------------------------------
+ */
+
+function nestedSuiteRows(
     suites,
-    depth = 0
+    parentModule
 ) {
     let html = '';
 
     for (const suite of suites || []) {
-        const stats =
-            getSuiteStats(suite);
-
-        const title =
+        const suiteName =
             cleanSuiteTitle(
                 suite.title
             );
 
-        const hasIssues =
-            stats.failed > 0 ||
-            stats.skipped > 0 ||
-            stats.pending > 0;
+        const stats =
+            getSuiteStats(suite);
 
-        const background =
-            hasIssues
-                ? '#fff4f4'
-                : '#ffffff';
-
-        html += `
-            <tr style="background:${background};">
-                <td
-                    style="
-                        padding:7px 8px;
-                        padding-left:${8 + depth * 18}px;
-                    "
-                >
-                    ${escapeHtml(title)}
-                </td>
-
-                <td
-                    style="
-                        padding:7px 8px;
-                        text-align:center;
-                    "
-                >
-                    ${stats.total}
-                </td>
-
-                <td
-                    style="
-                        padding:7px 8px;
-                        text-align:center;
-                        color:${COLORS.Passed};
-                    "
-                >
-                    ${stats.passed}
-                </td>
-
-                <td
-                    style="
-                        padding:7px 8px;
-                        text-align:center;
-                        color:${COLORS.Failed};
-                    "
-                >
-                    ${stats.failed}
-                </td>
-
-                <td
-                    style="
-                        padding:7px 8px;
-                        text-align:center;
-                        color:${COLORS.Skipped};
-                    "
-                >
-                    ${stats.skipped}
-                </td>
-
-                <td
-                    style="
-                        padding:7px 8px;
-                        text-align:center;
-                        color:${COLORS.Pending};
-                    "
-                >
-                    ${stats.pending}
-                </td>
-            </tr>
-        `;
-
-        html += suiteRows(
-            suite.suites || [],
-            depth + 1
+        html += createSuiteRow(
+            parentModule,
+            suiteName,
+            stats,
+            true
         );
+
+        /*
+         * Continue recursively if another
+         * suite level exists.
+         */
+        if (
+            suite.suites &&
+            suite.suites.length > 0
+        ) {
+            html += nestedSuiteRows(
+                suite.suites,
+                suiteName
+            );
+        }
     }
 
     return html;
 }
+
+/*
+ * -------------------------------------------------------------
+ * Generate Module + Suite rows
+ * -------------------------------------------------------------
+ *
+ * Expected structure:
+ *
+ * Module                         Suite
+ * ----------------------------------------------------------
+ * Ask AI Multiple View Tests     Ask AI Multiple View Functionality
+ * Ask AI Security Tests          Ask AI Security Functionality
+ *
+ * If there are no child suites:
+ *
+ * Module                         Suite
+ * ----------------------------------------------------------
+ * Some Module                    Some Module
+ *
+ * -------------------------------------------------------------
+ */
+
+function suiteRows(suites) {
+    let html = '';
+
+    for (const module of suites || []) {
+        const moduleName =
+            cleanSuiteTitle(
+                module.title
+            );
+
+        /*
+         * Normal case:
+         *
+         * Top-level suite = Module
+         * Child suite = Suite
+         */
+        if (
+            module.suites &&
+            module.suites.length > 0
+        ) {
+            for (
+                const suite
+                of module.suites
+            ) {
+                const suiteName =
+                    cleanSuiteTitle(
+                        suite.title
+                    );
+
+                const stats =
+                    getSuiteStats(suite);
+
+                html += createSuiteRow(
+                    moduleName,
+                    suiteName,
+                    stats
+                );
+
+                /*
+                 * Support deeper nesting.
+                 */
+                if (
+                    suite.suites &&
+                    suite.suites.length > 0
+                ) {
+                    html += nestedSuiteRows(
+                        suite.suites,
+                        suiteName
+                    );
+                }
+            }
+        } else {
+            /*
+             * No child suite.
+             *
+             * Use the module name as both
+             * Module and Suite.
+             */
+            const stats =
+                getSuiteStats(module);
+
+            html += createSuiteRow(
+                moduleName,
+                moduleName,
+                stats
+            );
+        }
+    }
+
+    return html;
+}
+
+/*
+ * -------------------------------------------------------------
+ * Issue details
+ * -------------------------------------------------------------
+ */
 
 function issueDetails(issues) {
     if (issues.length === 0) {
@@ -366,14 +551,21 @@ function issueDetails(issues) {
         `;
     }
 
-    const groups = new Map();
+    /*
+     * Group issues by project + suite.
+     */
+    const groups =
+        new Map();
 
     for (const issue of issues) {
         const key =
             `${issue.project}|||${issue.suite}`;
 
         if (!groups.has(key)) {
-            groups.set(key, []);
+            groups.set(
+                key,
+                []
+            );
         }
 
         groups
@@ -383,7 +575,10 @@ function issueDetails(issues) {
 
     let html = '';
 
-    for (const [key, items] of groups.entries()) {
+    for (
+        const [key, items]
+        of groups.entries()
+    ) {
         const [
             project,
             suite,
@@ -396,6 +591,7 @@ function issueDetails(issues) {
                     page-break-inside:avoid;
                 "
             >
+
                 <div
                     style="
                         font-weight:bold;
@@ -411,12 +607,16 @@ function issueDetails(issues) {
                 <table
                     style="
                         width:100%;
+                        table-layout:fixed;
                         border-collapse:collapse;
                         margin-top:5px;
                     "
                 >
+
                     <thead>
+
                         <tr>
+
                             <th
                                 style="
                                     padding:5px;
@@ -445,7 +645,9 @@ function issueDetails(issues) {
                             >
                                 Description
                             </th>
+
                         </tr>
+
                     </thead>
 
                     <tbody>
@@ -464,6 +666,7 @@ function issueDetails(issues) {
 
             html += `
                 <tr>
+
                     <td
                         style="
                             padding:5px;
@@ -480,6 +683,8 @@ function issueDetails(issues) {
                             padding:5px;
                             border:1px solid #ddd;
                             font-family:monospace;
+                            word-wrap:break-word;
+                            overflow-wrap:break-word;
                         "
                     >
                         ${escapeHtml(item.id)}
@@ -489,25 +694,36 @@ function issueDetails(issues) {
                         style="
                             padding:5px;
                             border:1px solid #ddd;
+                            word-wrap:break-word;
+                            overflow-wrap:break-word;
                         "
                     >
                         ${escapeHtml(
                             item.description
                         )}
                     </td>
+
                 </tr>
             `;
         }
 
         html += `
                     </tbody>
+
                 </table>
+
             </div>
         `;
     }
 
     return html;
 }
+
+/*
+ * -------------------------------------------------------------
+ * Main
+ * -------------------------------------------------------------
+ */
 
 async function main() {
     await fs.mkdir(
@@ -517,6 +733,9 @@ async function main() {
         }
     );
 
+    /*
+     * Read consolidated JSON.
+     */
     const raw =
         await fs.readFile(
             CONFIG.jsonPath,
@@ -535,10 +754,17 @@ async function main() {
         );
     }
 
+    /*
+     * ---------------------------------------------------------
+     * Overall statistics
+     * ---------------------------------------------------------
+     */
+
     const overall =
         emptyStats();
 
     const projectRows = [];
+
     const allIssues = [];
 
     /*
@@ -556,28 +782,39 @@ async function main() {
             stats
         );
 
+        const projectName =
+            project.title ||
+            project.name ||
+            'Unknown Project';
+
         projectRows.push({
             name:
-                project.title ||
-                project.name ||
-                'Unknown Project',
+                projectName,
 
             stats,
         });
 
+        /*
+         * Collect failed/skipped/pending
+         * tests.
+         */
         for (
-            const suite of
-            project.suites || []
+            const suite
+            of project.suites || []
         ) {
             collectIssues(
                 suite,
-                project.title ||
-                    project.name ||
-                    'Unknown Project',
+                projectName,
                 allIssues
             );
         }
     }
+
+    /*
+     * ---------------------------------------------------------
+     * Report date
+     * ---------------------------------------------------------
+     */
 
     const reportDate =
         new Date().toLocaleString(
@@ -611,7 +848,7 @@ async function main() {
 
     /*
      * ---------------------------------------------------------
-     * Project summary
+     * Project summary rows
      * ---------------------------------------------------------
      */
 
@@ -619,74 +856,83 @@ async function main() {
         projectRows
             .map(
                 project => `
-        <tr>
-            <td
-                style="
-                    padding:7px 8px;
-                    font-weight:500;
-                "
-            >
-                ${escapeHtml(
-                    project.name
-                )}
-            </td>
+                    <tr
+                        style="
+                            page-break-inside:avoid;
+                            break-inside:avoid;
+                        "
+                    >
 
-            <td
-                style="
-                    padding:7px 8px;
-                    text-align:center;
-                "
-            >
-                ${project.stats.total}
-            </td>
+                        <td
+                            style="
+                                padding:7px 8px;
+                                font-weight:500;
+                                word-wrap:break-word;
+                                overflow-wrap:break-word;
+                            "
+                        >
+                            ${escapeHtml(
+                                project.name
+                            )}
+                        </td>
 
-            <td
-                style="
-                    padding:7px 8px;
-                    text-align:center;
-                    color:${COLORS.Passed};
-                "
-            >
-                ${project.stats.passed}
-            </td>
+                        <td
+                            style="
+                                padding:7px 8px;
+                                text-align:center;
+                            "
+                        >
+                            ${project.stats.total}
+                        </td>
 
-            <td
-                style="
-                    padding:7px 8px;
-                    text-align:center;
-                    color:${COLORS.Failed};
-                "
-            >
-                ${project.stats.failed}
-            </td>
+                        <td
+                            style="
+                                padding:7px 8px;
+                                text-align:center;
+                                color:${COLORS.Passed};
+                            "
+                        >
+                            ${project.stats.passed}
+                        </td>
 
-            <td
-                style="
-                    padding:7px 8px;
-                    text-align:center;
-                    color:${COLORS.Skipped};
-                "
-            >
-                ${project.stats.skipped}
-            </td>
+                        <td
+                            style="
+                                padding:7px 8px;
+                                text-align:center;
+                                color:${COLORS.Failed};
+                            "
+                        >
+                            ${project.stats.failed}
+                        </td>
 
-            <td
-                style="
-                    padding:7px 8px;
-                    text-align:center;
-                    color:${COLORS.Pending};
-                "
-            >
-                ${project.stats.pending}
-            </td>
-        </tr>
-    `
+                        <td
+                            style="
+                                padding:7px 8px;
+                                text-align:center;
+                                color:${COLORS.Skipped};
+                            "
+                        >
+                            ${project.stats.skipped}
+                        </td>
+
+                        <td
+                            style="
+                                padding:7px 8px;
+                                text-align:center;
+                                color:${COLORS.Pending};
+                            "
+                        >
+                            ${project.stats.pending}
+                        </td>
+
+                    </tr>
+                `
             )
             .join('');
 
     /*
      * ---------------------------------------------------------
-     * Project sections
+     * Individual project sections
      * ---------------------------------------------------------
      */
 
@@ -705,12 +951,15 @@ async function main() {
                     page-break-inside:auto;
                 "
             >
+
                 <h2
                     style="
                         margin:0 0 8px;
                         padding:8px;
                         background:#e6f3fb;
                         border-left:5px solid #4a9fd0;
+                        page-break-after:avoid;
+                        break-after:avoid;
                     "
                 >
                     ${escapeHtml(name)}
@@ -719,30 +968,60 @@ async function main() {
                 <table
                     style="
                         width:100%;
+                        table-layout:fixed;
                         border-collapse:collapse;
                         margin-top:5px;
                     "
                 >
+
+                    <colgroup>
+
+                        <col style="width:28%;">
+
+                        <col style="width:32%;">
+
+                        <col style="width:8%;">
+
+                        <col style="width:8%;">
+
+                        <col style="width:8%;">
+
+                        <col style="width:8%;">
+
+                        <col style="width:8%;">
+
+                    </colgroup>
+
                     <thead>
+
                         <tr
                             style="
                                 background:#8ac7f0;
                             "
                         >
+
                             <th
                                 style="
                                     padding:7px 8px;
                                     text-align:left;
                                 "
                             >
-                                Test Area (Suite)
+                                Module
                             </th>
 
                             <th
                                 style="
                                     padding:7px 8px;
+                                    text-align:left;
+                                "
+                            >
+                                Suite
+                            </th>
+
+                            <th
+                                style="
+                                    padding:7px 5px;
                                     text-align:center;
-                                    width:60px;
                                 "
                             >
                                 Total
@@ -750,9 +1029,8 @@ async function main() {
 
                             <th
                                 style="
-                                    padding:7px 8px;
+                                    padding:7px 5px;
                                     text-align:center;
-                                    width:60px;
                                 "
                             >
                                 Passed
@@ -760,9 +1038,8 @@ async function main() {
 
                             <th
                                 style="
-                                    padding:7px 8px;
+                                    padding:7px 5px;
                                     text-align:center;
-                                    width:60px;
                                 "
                             >
                                 Failed
@@ -770,9 +1047,8 @@ async function main() {
 
                             <th
                                 style="
-                                    padding:7px 8px;
+                                    padding:7px 5px;
                                     text-align:center;
-                                    width:60px;
                                 "
                             >
                                 Skipped
@@ -780,22 +1056,27 @@ async function main() {
 
                             <th
                                 style="
-                                    padding:7px 8px;
+                                    padding:7px 5px;
                                     text-align:center;
-                                    width:60px;
                                 "
                             >
                                 Pending
                             </th>
+
                         </tr>
+
                     </thead>
 
                     <tbody>
+
                         ${suiteRows(
                             project.suites || []
                         )}
+
                     </tbody>
+
                 </table>
+
             </section>
         `;
     }
@@ -821,9 +1102,15 @@ async function main() {
 
 <style>
 
+@page {
+    size: A4;
+    margin: 20px;
+}
+
 body {
-    margin:20px;
-    font-family:Arial,sans-serif;
+    margin:0;
+    font-family:Arial, Helvetica, sans-serif;
+    font-size:11px;
     color:#222;
 }
 
@@ -835,6 +1122,10 @@ table {
 th,
 td {
     border:1px solid #999;
+}
+
+th {
+    font-weight:bold;
 }
 
 tr {
@@ -849,16 +1140,25 @@ h3 {
     break-after:avoid;
 }
 
+section {
+    page-break-inside:auto;
+}
+
 </style>
 
 </head>
 
 <body>
 
+<!-- =========================================================
+     TITLE
+     ========================================================= -->
+
 <h1
     style="
         text-align:center;
-        margin-bottom:0;
+        margin:0;
+        font-size:22px;
     "
 >
     E2E Test Results
@@ -867,13 +1167,18 @@ h3 {
 <h3
     style="
         text-align:center;
-        margin-top:8px;
+        margin:8px 0 15px;
+        font-weight:normal;
+        color:#555;
     "
 >
     ${escapeHtml(reportDate)}
 </h3>
 
-<!-- Overall Summary -->
+
+<!-- =========================================================
+     OVERALL SUMMARY
+     ========================================================= -->
 
 <table
     style="
@@ -884,7 +1189,11 @@ h3 {
 
 <thead>
 
-<tr>
+<tr
+    style="
+        background:#8ac7f0;
+    "
+>
 
 <th style="padding:10px;">
     Total
@@ -969,11 +1278,15 @@ h3 {
 
 </table>
 
-<!-- Project Summary -->
+
+<!-- =========================================================
+     PROJECT SUMMARY
+     ========================================================= -->
 
 <h2
     style="
         margin-top:28px;
+        margin-bottom:8px;
     "
 >
     Project Summary
@@ -1030,11 +1343,17 @@ ${projectSummaryRows}
 
 </table>
 
-<!-- Individual project sections -->
+
+<!-- =========================================================
+     INDIVIDUAL PROJECT REPORTS
+     ========================================================= -->
 
 ${projectSections}
 
-<!-- Failed / skipped / pending -->
+
+<!-- =========================================================
+     FAILED / SKIPPED / PENDING DETAILS
+     ========================================================= -->
 
 <h2
     style="
@@ -1054,7 +1373,7 @@ ${issueDetails(allIssues)}
 
     /*
      * ---------------------------------------------------------
-     * Generate PDF
+     * Generate PDF using Puppeteer
      * ---------------------------------------------------------
      */
 
@@ -1094,6 +1413,9 @@ ${issueDetails(allIssues)}
             printBackground:
                 true,
 
+            preferCSSPageSize:
+                true,
+
             margin: {
                 top: '20px',
                 bottom: '20px',
@@ -1105,13 +1427,22 @@ ${issueDetails(allIssues)}
         await browser.close();
     }
 
+    /*
+     * ---------------------------------------------------------
+     * Console output
+     * ---------------------------------------------------------
+     */
+
     console.log('');
+
     console.log(
         '========================================'
     );
+
     console.log(
         'CONSOLIDATED PDF GENERATED'
     );
+
     console.log(
         '========================================'
     );
@@ -1145,11 +1476,19 @@ ${issueDetails(allIssues)}
     );
 }
 
+/*
+ * -------------------------------------------------------------
+ * Error handling
+ * -------------------------------------------------------------
+ */
+
 main().catch(error => {
     console.error('');
+
     console.error(
         'ERROR generating consolidated PDF:'
     );
+
     console.error(error);
 
     process.exit(1);
