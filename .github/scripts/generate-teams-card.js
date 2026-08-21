@@ -483,7 +483,7 @@ function main() {
             type: 'TextBlock',
 
             text:
-                'Consolidated E2E Test Report',
+                'MFE E2E Test Reports',
 
             weight: 'Bolder',
 
